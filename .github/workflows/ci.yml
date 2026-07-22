@@ -20,7 +20,6 @@ jobs:
         ports: ['6379:6379']
         options: >-
           --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
-
     env:
       NODE_ENV: test
       APP_NAME: RE-Agent
@@ -28,6 +27,103 @@ jobs:
       REDIS_URL: redis://localhost:6379
       LOG_LEVEL: error
       RUN_DATABASE_INTEGRATION_TESTS: "true"
-
     steps:
-      - uses: actions/checkout@v
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.2.15 }
+      - name: Prepare validation log directory
+        run: mkdir -p artifacts/ci
+      # No lockfile is committed yet. This initial CI run produces bun.lock
+      # as evidence; commit it before switching this command to --frozen-lockfile.
+      - name: Install dependencies and generate Bun lockfile
+        run: |
+          set -o pipefail
+          bun install 2>&1 | tee artifacts/ci/00-bun-install.log
+      - name: Prisma generate
+        run: |
+          set -o pipefail
+          bun run db:generate 2>&1 | tee artifacts/ci/01-prisma-generate.log
+      - name: Prisma format check
+        run: |
+          set -o pipefail
+          bun --filter @re-agent/database exec prisma format --check 2>&1 | tee artifacts/ci/02-prisma-format.log
+      - name: Prisma validate
+        run: |
+          set -o pipefail
+          bun run db:validate 2>&1 | tee artifacts/ci/03-prisma-validate.log
+      - name: Prisma migration deploy
+        run: |
+          set -o pipefail
+          bun run db:migrate 2>&1 | tee artifacts/ci/04-prisma-migrate.log
+      - name: Prisma seed
+        run: |
+          set -o pipefail
+          bun run db:seed 2>&1 | tee artifacts/ci/05-prisma-seed.log
+      - name: Format, lint, architecture and type checks
+        run: |
+          set -o pipefail
+          {
+            bun run format:check
+            bun run lint
+            bun run architecture:check
+            bun run typecheck
+          } 2>&1 | tee artifacts/ci/06-static-checks.log
+      - name: Unit and database integration tests
+        run: |
+          set -o pipefail
+          bun run test 2>&1 | tee artifacts/ci/07-tests.log
+      - name: Production build
+        run: |
+          set -o pipefail
+          bun run build 2>&1 | tee artifacts/ci/08-build.log
+      - name: Preserve CI validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprint-02-1-ci-logs
+          path: |
+            artifacts/ci/
+            bun.lock
+          if-no-files-found: warn
+
+  container-smoke:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare smoke log directory
+        run: mkdir -p artifacts/docker-smoke
+      - name: Create local container environment
+        run: cp .env.example .env.local
+      - name: Build and start containers
+        run: |
+          set -o pipefail
+          docker compose up --build -d 2>&1 | tee artifacts/docker-smoke/01-compose-up.log
+      - name: Wait for web and dependency health routes
+        run: |
+          set -o pipefail
+          {
+            for attempt in {1..30}; do
+              if curl --fail --silent http://localhost:3000/api/health; then break; fi
+              sleep 2
+            done
+            curl --fail --silent http://localhost:3000/api/health
+            curl --fail --silent http://localhost:3000/api/health/database
+            curl --fail --silent http://localhost:3000/api/health/redis
+            docker compose ps
+          } 2>&1 | tee artifacts/docker-smoke/02-health.log
+      - name: Collect container logs
+        if: always()
+        run: docker compose logs --no-color 2>&1 | tee artifacts/docker-smoke/03-container.log
+      - name: Stop containers
+        if: always()
+        run: docker compose down --volumes 2>&1 | tee artifacts/docker-smoke/04-compose-down.log
+      - name: Preserve Docker smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprint-02-1-docker-smoke-logs
+          path: artifacts/docker-smoke/
+          if-no-files-found: warn
