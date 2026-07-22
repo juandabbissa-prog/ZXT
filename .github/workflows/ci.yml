@@ -44,7 +44,7 @@ jobs:
       - name: Prisma generate
         run: |
           set -o pipefail
-          bun run db:generate 2>&1 | tee artifacts/ci/01-prisma-generate.log
+          (cd packages/database && bunx prisma format --check --schema prisma/schema.prisma) 2>&1 | tee artifacts/ci/02-prisma-format.log
       - name: Prisma format check
         run: |
           set -o pipefail
