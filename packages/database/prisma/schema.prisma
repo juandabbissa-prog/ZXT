@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum KeywordRole {
+  DISCOVERY
+  CONTEXT
+  SIGNAL
+  EXCLUSION
+}
+enum KeywordSource {
+  MANUAL
+  IMPORT
+  SYSTEM_SUGGESTED
+  API
+}
+enum KeywordStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+  DELETED
+}
+enum MatchMode {
+  EXACT
+  PHRASE
+  CONTAINS
+}
+enum ReferenceStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model SystemConfig {
+  id String @id @default(uuid())
+  key String @unique
+  value Json
+  status String @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SystemEvent {
+  id String @id @default(uuid())
+  type String
+  source String
+  payload Json?
+  status String @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([type])
+  @@index([source])
+  @@index([createdAt])
+}
+
+model KeywordCategory {
+  id String @id @default(uuid()) @db.Uuid
+  code String @unique @db.VarChar(64)
+  name String @db.VarChar(120)
+  parentId String? @map("parent_id") @db.Uuid
+  status ReferenceStatus @default(ACTIVE)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  parent KeywordCategory? @relation("KeywordCategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children KeywordCategory[] @relation("KeywordCategoryTree")
+  keywords Keyword[]
+  @@index([parentId])
+  @@index([status])
+  @@map("keyword_categories")
+}
+model KeywordTag {
+  id String @id @default(uuid()) @db.Uuid
+  code String @unique @db.VarChar(64)
+  name String @db.VarChar(120)
+  status ReferenceStatus @default(ACTIVE)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  links KeywordTagLink[]
+  @@index([status])
+  @@map("keyword_tags")
+}
+model Keyword {
+  id String @id @default(uuid()) @db.Uuid
+  phrase String @db.VarChar(120)
+  normalizedPhrase String @unique @map("normalized_phrase") @db.VarChar(160)
+  categoryId String @map("category_id") @db.Uuid
+  source KeywordSource
+  status KeywordStatus @default(DRAFT)
+  matchMode MatchMode @map("match_mode")
+  note String? @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  category KeywordCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  roles KeywordRoleLink[]
+  variants KeywordVariant[]
+  tags KeywordTagLink[]
+  @@index([categoryId])
+  @@index([status])
+  @@index([source])
+  @@index([updatedAt(sort: Desc)])
+  @@map("keywords")
+}
+model KeywordRoleLink {
+  keywordId String @map("keyword_id") @db.Uuid
+  role KeywordRole
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  keyword Keyword @relation(fields: [keywordId], references: [id], onDelete: Restrict)
+  @@id([keywordId, role])
+  @@index([role])
+  @@map("keyword_roles")
+}
+model KeywordVariant {
+  id String @id @default(uuid()) @db.Uuid
+  keywordId String @map("keyword_id") @db.Uuid
+  phrase String @db.VarChar(120)
+  normalizedPhrase String @map("normalized_phrase") @db.VarChar(160)
+  status ReferenceStatus @default(ACTIVE)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  keyword Keyword @relation(fields: [keywordId], references: [id], onDelete: Restrict)
+  @@unique([keywordId, normalizedPhrase])
+  @@index([keywordId])
+  @@index([status])
+  @@map("keyword_variants")
+}
+model KeywordTagLink {
+  keywordId String @map("keyword_id") @db.Uuid
+  tagId String @map("tag_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  keyword Keyword @relation(fields: [keywordId], references: [id], onDelete: Restrict)
+  tag KeywordTag @relation(fields: [tagId], references: [id], onDelete: Restrict)
+  @@id([keywordId, tagId])
+  @@index([tagId])
+  @@map("keyword_tag_links")
+}

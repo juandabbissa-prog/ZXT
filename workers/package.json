@@ -1,0 +1,5 @@
+{
+  "name": "@re-agent/workers", "version": "0.1.0", "private": true, "type": "module",
+  "scripts": { "build": "tsc --noEmit", "lint": "eslint src", "test": "vitest run --passWithNoTests", "typecheck": "tsc --noEmit" },
+  "dependencies": { "@re-agent/shared": "workspace:*" }, "devDependencies": { "vitest": "^3.1.2" }
+}

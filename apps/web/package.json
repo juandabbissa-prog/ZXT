@@ -1,0 +1,6 @@
+{
+  "name": "@re-agent/web", "version": "0.1.0", "private": true,
+  "scripts": { "dev": "next dev", "build": "next build", "lint": "eslint src tests", "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "dependencies": { "@prisma/client": "^6.7.0", "@re-agent/database": "workspace:*", "@re-agent/shared": "workspace:*", "ioredis": "^5.6.1", "next": "^15.3.1", "react": "^19.1.0", "react-dom": "^19.1.0" },
+  "devDependencies": { "@types/react": "^19.1.2", "@types/react-dom": "^19.1.2", "vitest": "^3.1.2" }
+}

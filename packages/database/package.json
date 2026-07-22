@@ -1,0 +1,21 @@
+{
+  "name": "@re-agent/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:seed": "prisma db seed",
+    "prisma:reset": "prisma migrate reset"
+  },
+  "dependencies": { "@prisma/client": "^6.7.0", "@re-agent/shared": "workspace:*" },
+  "devDependencies": { "@types/node": "^22.15.3", "prisma": "^6.7.0", "tsx": "^4.19.3", "vitest": "^3.1.2" },
+  "prisma": { "seed": "tsx prisma/seed.ts" }
+}
