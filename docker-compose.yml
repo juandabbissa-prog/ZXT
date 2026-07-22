@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-re_agent}
+      POSTGRES_USER: ${POSTGRES_USER:-re_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-re_agent}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    command: bun run db:migrate && bun --filter @re-agent/web dev
+    ports:
+      - '${APP_PORT:-3000}:3000'
+    env_file: .env.local
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-re_agent}:${POSTGRES_PASSWORD:-re_agent}@postgres:5432/${POSTGRES_DB:-re_agent}
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - .:/app
+      - bun_cache:/root/.bun/install/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'bun', '-e', 'fetch("http://localhost:3000/api/health").then((response) => { if (!response.ok) process.exit(1) })']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  crawler:
+    build:
+      context: .
+      dockerfile: docker/crawler.Dockerfile
+    command: bun --filter @re-agent/crawler dev
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-re_agent}:${POSTGRES_PASSWORD:-re_agent}@postgres:5432/${POSTGRES_DB:-re_agent}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  bun_cache:
