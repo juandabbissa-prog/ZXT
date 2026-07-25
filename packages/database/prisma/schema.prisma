@@ -150,7 +150,7 @@ model KeywordTagLink {
   tagId     String   @map("tag_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   keyword   Keyword  @relation(fields: [keywordId], references: [id], onDelete: Restrict)
-  tag       Keyword  @relation(fields: [tagId], references: [id], onDelete: Restrict)
+  tag       KeywordTag @relation(fields: [tagId], references: [id], onDelete: Restrict)
 
   @@id([keywordId, tagId])
   @@index([tagId])
