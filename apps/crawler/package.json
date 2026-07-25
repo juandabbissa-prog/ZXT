@@ -11,10 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@re-agent/shared": "workspace:*"
+    "@re-agent/shared": "workspace:*",
+    "tsx": "^4.19.3"
   },
   "devDependencies": {
-    "tsx": "^4.19.3",
     "vitest": "^3.1.2"
   }
 }

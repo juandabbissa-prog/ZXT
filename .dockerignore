@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+.git
+artifacts
+.ci-repair
+*.zip
+.env
+.env.local
+.next
+**/.next
+dist
+**/dist
+coverage
