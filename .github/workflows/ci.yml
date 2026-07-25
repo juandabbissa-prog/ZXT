@@ -48,7 +48,7 @@ jobs:
       - name: Prisma format check
         run: |
           set -o pipefail
-          bun --filter @re-agent/database exec prisma format --check --schema packages/database/prisma/schema.prisma 2>&1 | tee artifacts/ci/02-prisma-format.log
+                    (cd packages/database && bunx --no-install prisma format --check --schema prisma/schema.prisma) 2>&1 | tee artifacts/ci/02-prisma-format.log
       - name: Prisma validate
         run: |
           set -o pipefail
