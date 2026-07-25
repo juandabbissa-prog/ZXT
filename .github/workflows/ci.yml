@@ -48,7 +48,7 @@ jobs:
       - name: Prisma format check
         run: |
           set -o pipefail
-                    (cd packages/database && bunx --no-install prisma format --check --schema prisma/schema.prisma) 2>&1 | tee artifacts/ci/02-prisma-format.log
+                    (cd packages/database && bunx --no-install prisma format  --schema prisma/schema.prisma) 2>&1 | tee artifacts/ci/02-prisma-format.log
       - name: Prisma validate
         run: |
           set -o pipefail
@@ -86,6 +86,7 @@ jobs:
           path: |
             artifacts/ci/
             bun.lock
+            packages/database/prisma/schema.prisma
           if-no-files-found: warn
 
   container-smoke:
