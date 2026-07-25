@@ -7,7 +7,7 @@ COPY packages/database/package.json packages/database/package.json
 COPY packages/sdk/package.json packages/sdk/package.json
 COPY apps/crawler/package.json apps/crawler/package.json
 COPY workers/package.json workers/package.json
-RUN bun install --frozen-lockfile
+RUN NODE_ENV=development bun install --frozen-lockfile
 COPY . .
 EXPOSE 3000
 CMD ["bun", "--filter", "@re-agent/web", "dev"]
