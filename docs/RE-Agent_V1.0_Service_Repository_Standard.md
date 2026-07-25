@@ -10,12 +10,12 @@
 Route → Service → Repository → Prisma → PostgreSQL
 ```
 
-| 层 | 职责 | 禁止事项 |
-|---|---|---|
-| Route | HTTP 输入校验、身份/请求上下文、响应映射 | 不写业务规则；不直接调用 Prisma。 |
-| Service | 用例编排、事务、领域错误、审计日志、跨 Repository 协调 | 不暴露 HTTP 或 ORM 细节。 |
-| Repository | 单一实体/聚合的数据读取与写入、Prisma 查询映射 | 不调用 Repository；不调用 Service；不自行开启事务。 |
-| Prisma | ORM、migration、连接管理 | 不承载业务规则。 |
+| 层         | 职责                                                   | 禁止事项                                            |
+| ---------- | ------------------------------------------------------ | --------------------------------------------------- |
+| Route      | HTTP 输入校验、身份/请求上下文、响应映射               | 不写业务规则；不直接调用 Prisma。                   |
+| Service    | 用例编排、事务、领域错误、审计日志、跨 Repository 协调 | 不暴露 HTTP 或 ORM 细节。                           |
+| Repository | 单一实体/聚合的数据读取与写入、Prisma 查询映射         | 不调用 Repository；不调用 Service；不自行开启事务。 |
+| Prisma     | ORM、migration、连接管理                               | 不承载业务规则。                                    |
 
 ## 架构铁律
 

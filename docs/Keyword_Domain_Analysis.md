@@ -22,12 +22,12 @@ Draft → Active ↔ Paused → Archived → Deleted
 
 ## 使用场景
 
-| 角色 | 后续使用方 | 作用 |
-|---|---|---|
-| Discovery | Anchor Center | 定义账号、主页或公开内容发现的查询词。 |
-| Context | Content/Comment 模块 | 提供房产、本地、楼盘等上下文分类词。 |
-| Signal | Signal/Lead 模块 | 提供可复核的意向信号词，不能单独决定 Lead。 |
-| Exclusion | 任意后续处理模块 | 标识应排除或降权的语境。 |
+| 角色      | 后续使用方           | 作用                                        |
+| --------- | -------------------- | ------------------------------------------- |
+| Discovery | Anchor Center        | 定义账号、主页或公开内容发现的查询词。      |
+| Context   | Content/Comment 模块 | 提供房产、本地、楼盘等上下文分类词。        |
+| Signal    | Signal/Lead 模块     | 提供可复核的意向信号词，不能单独决定 Lead。 |
+| Exclusion | 任意后续处理模块     | 标识应排除或降权的语境。                    |
 
 ## 关系
 

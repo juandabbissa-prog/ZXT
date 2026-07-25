@@ -8,12 +8,12 @@
 
 ## Environments
 
-| Environment | Process |
-|---|---|
-| Development | Generate/review migration from candidate schema only after Sprint 2.1 approval; apply to disposable database. |
-| CI | Start empty PostgreSQL, run `prisma migrate deploy`, run seed, verify schema and tests. |
-| Test database | Recreate or isolate database, deploy all migrations, run test seed; never reuse production data. |
-| Production | Backup, review SQL and lock impact, deploy forward-only migration, observe, then seed only approved reference data. |
+| Environment   | Process                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Development   | Generate/review migration from candidate schema only after Sprint 2.1 approval; apply to disposable database.       |
+| CI            | Start empty PostgreSQL, run `prisma migrate deploy`, run seed, verify schema and tests.                             |
+| Test database | Recreate or isolate database, deploy all migrations, run test seed; never reuse production data.                    |
+| Production    | Backup, review SQL and lock impact, deploy forward-only migration, observe, then seed only approved reference data. |
 
 ## Rollback and repair
 

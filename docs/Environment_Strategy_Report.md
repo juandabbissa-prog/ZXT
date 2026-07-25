@@ -13,15 +13,15 @@ RE-Agent 遵循以下两项原则：
 
 ## 2. 当前宿主机依赖分析
 
-| 能力 | 当前状态 | 可移除性 | 工程化方案 |
-|---|---|---|---|
-| Bun | 本机不可用 | 可移除 | 使用 `oven/bun` Docker 镜像；GitHub Actions 使用 `oven-sh/setup-bun`。 |
-| Node.js | 无项目直接依赖 | 可移除 | 由 Bun 镜像或 GitHub Actions 托管。 |
-| Docker Desktop | 本机不可用 | 可移除为本地验收前提 | 本地 Docker 仅为可选开发体验；完整验收改由 GitHub Actions 执行。 |
-| PostgreSQL | 本机不需要 | 已移除 | Docker Compose 的 postgres 服务及 GitHub Actions service container。 |
-| Redis | 本机不需要 | 已移除 | Docker Compose 的 redis 服务及 GitHub Actions service container。 |
-| Git | 项目已使用 | 最小保留 | 用于版本控制和推送到 CI 远程仓库。 |
-| GitHub 远程仓库 | 尚未配置 | 必要的外部协作条件 | GitHub Actions 需要可推送的远程仓库；不要求安装软件。 |
+| 能力            | 当前状态       | 可移除性             | 工程化方案                                                             |
+| --------------- | -------------- | -------------------- | ---------------------------------------------------------------------- |
+| Bun             | 本机不可用     | 可移除               | 使用 `oven/bun` Docker 镜像；GitHub Actions 使用 `oven-sh/setup-bun`。 |
+| Node.js         | 无项目直接依赖 | 可移除               | 由 Bun 镜像或 GitHub Actions 托管。                                    |
+| Docker Desktop  | 本机不可用     | 可移除为本地验收前提 | 本地 Docker 仅为可选开发体验；完整验收改由 GitHub Actions 执行。       |
+| PostgreSQL      | 本机不需要     | 已移除               | Docker Compose 的 postgres 服务及 GitHub Actions service container。   |
+| Redis           | 本机不需要     | 已移除               | Docker Compose 的 redis 服务及 GitHub Actions service container。      |
+| Git             | 项目已使用     | 最小保留             | 用于版本控制和推送到 CI 远程仓库。                                     |
+| GitHub 远程仓库 | 尚未配置       | 必要的外部协作条件   | GitHub Actions 需要可推送的远程仓库；不要求安装软件。                  |
 
 ## 3. Docker 化方案
 
@@ -49,10 +49,10 @@ Docker 仍是可复现本地开发的首选，但不是 Product Owner 必须安�
 
 ## 6. 无法完全消除的依赖及依据
 
-| 依赖 | 是否要求 Product Owner 安装 | 技术依据 |
-|---|---|---|
-| GitHub 远程仓库的访问权 | 否，属于账号/协作授权 | GitHub Actions 必须由远程仓库事件触发；这不是本地软件安装。 |
-| Git | 最小保留 | 需要向远程仓库推送提交以触发 CI；当前 Codex 环境已提供内置 Git。 |
+| 依赖                    | 是否要求 Product Owner 安装 | 技术依据                                                         |
+| ----------------------- | --------------------------- | ---------------------------------------------------------------- |
+| GitHub 远程仓库的访问权 | 否，属于账号/协作授权       | GitHub Actions 必须由远程仓库事件触发；这不是本地软件安装。      |
+| Git                     | 最小保留                    | 需要向远程仓库推送提交以触发 CI；当前 Codex 环境已提供内置 Git。 |
 
 没有要求 Product Owner 安装 Bun、Node.js、Docker、PostgreSQL 或 Redis。
 

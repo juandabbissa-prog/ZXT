@@ -6,7 +6,7 @@ const schema = z.object({
   APP_PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info')
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
 
 export type AppConfig = z.infer<typeof schema>;
@@ -14,7 +14,9 @@ export type AppConfig = z.infer<typeof schema>;
 export function readConfig(environment: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = schema.safeParse(environment);
   if (!parsed.success) {
-    throw new Error(`Invalid environment configuration: ${parsed.error.issues.map((x) => x.path.join('.')).join(', ')}`);
+    throw new Error(
+      `Invalid environment configuration: ${parsed.error.issues.map((x) => x.path.join('.')).join(', ')}`,
+    );
   }
   return parsed.data;
 }

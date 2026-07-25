@@ -26,7 +26,7 @@ jobs:
       DATABASE_URL: postgresql://re_agent:re_agent@localhost:5432/re_agent
       REDIS_URL: redis://localhost:6379
       LOG_LEVEL: error
-      RUN_DATABASE_INTEGRATION_TESTS: "true"
+      RUN_DATABASE_INTEGRATION_TESTS: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,7 +48,7 @@ jobs:
       - name: Prisma format check
         run: |
           set -o pipefail
-                    (cd packages/database && bunx --no-install prisma format  --schema prisma/schema.prisma) 2>&1 | tee artifacts/ci/02-prisma-format.log
+          (cd packages/database && bunx --no-install prisma format --check --schema prisma/schema.prisma) 2>&1 | tee artifacts/ci/02-prisma-format.log
       - name: Prisma validate
         run: |
           set -o pipefail
@@ -64,12 +64,7 @@ jobs:
       - name: Format, lint, architecture and type checks
         run: |
           set -o pipefail
-          {
-            bun run format:check
-            bun run lint
-            bun run architecture:check
-            bun run typecheck
-          } 2>&1 | tee artifacts/ci/06-static-checks.log
+          (bun run format:check && bun run lint && bun run architecture:check && bun run typecheck) 2>&1 | tee artifacts/ci/06-static-checks.log
       - name: Unit and database integration tests
         run: |
           set -o pipefail

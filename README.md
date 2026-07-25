@@ -27,13 +27,13 @@ Next.js、TypeScript、Bun Workspace、PostgreSQL、Prisma、Redis、Pino、Vite
 
 ### Docker 操作脚本
 
-| 操作 | POSIX Shell | PowerShell |
-|---|---|---|
-| 启动 | `./scripts/docker.sh up` | `./scripts/docker.ps1 up` |
-| 停止 | `./scripts/docker.sh down` | `./scripts/docker.ps1 down` |
-| 无缓存重建 | `./scripts/docker.sh rebuild` | `./scripts/docker.ps1 rebuild` |
+| 操作           | POSIX Shell                    | PowerShell                      |
+| -------------- | ------------------------------ | ------------------------------- |
+| 启动           | `./scripts/docker.sh up`       | `./scripts/docker.ps1 up`       |
+| 停止           | `./scripts/docker.sh down`     | `./scripts/docker.ps1 down`     |
+| 无缓存重建     | `./scripts/docker.sh rebuild`  | `./scripts/docker.ps1 rebuild`  |
 | 重置开发数据库 | `./scripts/docker.sh reset-db` | `./scripts/docker.ps1 reset-db` |
-| 容器内测试 | `./scripts/docker.sh test` | `./scripts/docker.ps1 test` |
+| 容器内测试     | `./scripts/docker.sh test`     | `./scripts/docker.ps1 test`     |
 
 重置数据库会删除 Docker volumes，仅限开发环境。
 

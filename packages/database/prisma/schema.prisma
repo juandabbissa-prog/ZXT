@@ -81,12 +81,12 @@ model KeywordCategory {
 }
 
 model KeywordTag {
-  id        String          @id @default(uuid()) @db.Uuid
-  code      String          @unique @db.VarChar(64)
-  name      String          @db.VarChar(120)
-  status    ReferenceStatus @default(ACTIVE)
-  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id        String           @id @default(uuid()) @db.Uuid
+  code      String           @unique @db.VarChar(64)
+  name      String           @db.VarChar(120)
+  status    ReferenceStatus  @default(ACTIVE)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   links     KeywordTagLink[]
 
   @@index([status])
@@ -94,19 +94,19 @@ model KeywordTag {
 }
 
 model Keyword {
-  id               String           @id @default(uuid()) @db.Uuid
-  phrase           String           @db.VarChar(120)
-  normalizedPhrase String           @unique @map("normalized_phrase") @db.VarChar(160)
-  categoryId       String           @map("category_id") @db.Uuid
+  id               String            @id @default(uuid()) @db.Uuid
+  phrase           String            @db.VarChar(120)
+  normalizedPhrase String            @unique @map("normalized_phrase") @db.VarChar(160)
+  categoryId       String            @map("category_id") @db.Uuid
   source           KeywordSource
-  status           KeywordStatus    @default(DRAFT)
-  matchMode        MatchMode        @map("match_mode")
-  note             String?          @db.VarChar(500)
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  archivedAt       DateTime?        @map("archived_at") @db.Timestamptz(3)
-  deletedAt        DateTime?        @map("deleted_at") @db.Timestamptz(3)
-  category         KeywordCategory  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  status           KeywordStatus     @default(DRAFT)
+  matchMode        MatchMode         @map("match_mode")
+  note             String?           @db.VarChar(500)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt       DateTime?         @map("archived_at") @db.Timestamptz(3)
+  deletedAt        DateTime?         @map("deleted_at") @db.Timestamptz(3)
+  category         KeywordCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   roles            KeywordRoleLink[]
   variants         KeywordVariant[]
   tags             KeywordTagLink[]
@@ -119,10 +119,10 @@ model Keyword {
 }
 
 model KeywordRoleLink {
-  keywordId String          @map("keyword_id") @db.Uuid
+  keywordId String      @map("keyword_id") @db.Uuid
   role      KeywordRole
-  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  keyword   Keyword         @relation(fields: [keywordId], references: [id], onDelete: Restrict)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  keyword   Keyword     @relation(fields: [keywordId], references: [id], onDelete: Restrict)
 
   @@id([keywordId, role])
   @@index([role])
@@ -146,10 +146,10 @@ model KeywordVariant {
 }
 
 model KeywordTagLink {
-  keywordId String   @map("keyword_id") @db.Uuid
-  tagId     String   @map("tag_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  keyword   Keyword  @relation(fields: [keywordId], references: [id], onDelete: Restrict)
+  keywordId String     @map("keyword_id") @db.Uuid
+  tagId     String     @map("tag_id") @db.Uuid
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  keyword   Keyword    @relation(fields: [keywordId], references: [id], onDelete: Restrict)
   tag       KeywordTag @relation(fields: [tagId], references: [id], onDelete: Restrict)
 
   @@id([keywordId, tagId])

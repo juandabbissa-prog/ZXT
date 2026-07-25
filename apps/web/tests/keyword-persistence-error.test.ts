@@ -1,8 +1,12 @@
 import { Prisma } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
-import { KeywordPersistenceError, mapKeywordPersistenceError } from '../src/infrastructure/persistence/keyword-persistence-error';
+import {
+  KeywordPersistenceError,
+  mapKeywordPersistenceError,
+} from '../src/infrastructure/persistence/keyword-persistence-error';
 
-const prismaError = (code: string) => new Prisma.PrismaClientKnownRequestError('database error', { code, clientVersion: 'test' });
+const prismaError = (code: string) =>
+  new Prisma.PrismaClientKnownRequestError('database error', { code, clientVersion: 'test' });
 
 describe('keyword persistence error mapping', () => {
   it.each([

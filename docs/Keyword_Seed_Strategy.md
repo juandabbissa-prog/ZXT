@@ -16,10 +16,10 @@ Seed uses stable `code` values and upsert semantics. Re-running it must leave ca
 
 ## Environment policy
 
-| Environment | Seed behavior |
-|---|---|
-| Development | May seed only approved controlled defaults. |
-| Test | Seeds controlled defaults plus isolated test fixtures owned by tests. |
-| Production | No example data, no suggested Keyword, no regional/property keyword list; only explicitly approved controlled reference data. |
+| Environment | Seed behavior                                                                                                                 |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Development | May seed only approved controlled defaults.                                                                                   |
+| Test        | Seeds controlled defaults plus isolated test fixtures owned by tests.                                                         |
+| Production  | No example data, no suggested Keyword, no regional/property keyword list; only explicitly approved controlled reference data. |
 
 No 大连房产关键词库 or production import is included. Real keyword data requires a separate Product Owner-approved task.

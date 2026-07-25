@@ -4,13 +4,13 @@
 
 Candidate schema: `prisma/schema.keyword.prisma`. It is isolated from the current runtime schema and must not be merged or migrated during Sprint 2.0.5.
 
-| Domain concept | Prisma / PostgreSQL mapping |
-|---|---|
-| Identifier | `String @default(uuid()) @db.Uuid`; PostgreSQL `uuid`. |
-| Time | `DateTime @db.Timestamptz(3)`; `createdAt @default(now())`, `updatedAt @updatedAt`. |
-| State | Prisma enums backed by PostgreSQL enum types. |
-| Text | bounded `varchar`; normalized phrase uses `varchar(160)`. |
-| Relations | explicit FK, `onDelete: Restrict`, mapped `snake_case` columns. |
+| Domain concept | Prisma / PostgreSQL mapping                                                         |
+| -------------- | ----------------------------------------------------------------------------------- |
+| Identifier     | `String @default(uuid()) @db.Uuid`; PostgreSQL `uuid`.                              |
+| Time           | `DateTime @db.Timestamptz(3)`; `createdAt @default(now())`, `updatedAt @updatedAt`. |
+| State          | Prisma enums backed by PostgreSQL enum types.                                       |
+| Text           | bounded `varchar`; normalized phrase uses `varchar(160)`.                           |
+| Relations      | explicit FK, `onDelete: Restrict`, mapped `snake_case` columns.                     |
 
 ## Relationship decisions
 
@@ -24,10 +24,10 @@ Candidate schema: `prisma/schema.keyword.prisma`. It is isolated from the curren
 
 The candidate keeps `keywords.normalized_phrase` globally unique even after `deleted_at` is populated. Therefore a deleted phrase cannot be recreated; it must be restored by a future explicit workflow or a new phrase must be chosen.
 
-| Option | Benefit | Cost |
-|---|---|---|
-| Keep global unique key (recommended V1) | Preserves identity/history, avoids ambiguous historical matches, simple Prisma support | Cannot recreate an identical phrase after deletion. |
-| Partial unique index for active rows | Allows recreation | Requires custom SQL migration, creates historical ambiguity and is not directly modeled by Prisma `@unique`. |
+| Option                                  | Benefit                                                                                | Cost                                                                                                         |
+| --------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Keep global unique key (recommended V1) | Preserves identity/history, avoids ambiguous historical matches, simple Prisma support | Cannot recreate an identical phrase after deletion.                                                          |
+| Partial unique index for active rows    | Allows recreation                                                                      | Requires custom SQL migration, creates historical ambiguity and is not directly modeled by Prisma `@unique`. |
 
 This is a deliberate recommendation, not a silent rule. Chief Architect must confirm it before Sprint 2.1 schema implementation.
 

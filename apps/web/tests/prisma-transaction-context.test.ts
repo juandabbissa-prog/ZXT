@@ -19,6 +19,8 @@ describe('Prisma transaction context', () => {
   });
 
   it('fails fast for an unknown context instead of falling back to the root client', () => {
-    expect(() => resolvePrismaExecutor({} as PrismaClient, {} as never)).toThrow(InvalidPersistenceTransactionContextError);
+    expect(() => resolvePrismaExecutor({} as PrismaClient, {} as never)).toThrow(
+      InvalidPersistenceTransactionContextError,
+    );
   });
 });
