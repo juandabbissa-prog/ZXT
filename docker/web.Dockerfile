@@ -10,4 +10,4 @@ COPY workers/package.json workers/package.json
 RUN NODE_ENV=development bun install --frozen-lockfile
 COPY . .
 EXPOSE 3000
-CMD ["bun", "--filter", "@re-agent/web", "dev"]
+CMD ["bun", "--cwd", "apps/web", "run", "dev"]

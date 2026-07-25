@@ -9,4 +9,4 @@ COPY packages/sdk/package.json packages/sdk/package.json
 COPY workers/package.json workers/package.json
 RUN NODE_ENV=development bun install --frozen-lockfile
 COPY . .
-CMD ["bun", "--filter", "@re-agent/crawler", "dev"]
+CMD ["bun", "--cwd", "apps/crawler", "run", "dev"]
