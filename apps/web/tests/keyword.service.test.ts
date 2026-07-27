@@ -177,7 +177,7 @@ describe('KeywordService', () => {
       service.changeStatus({ id: 'keyword-1', expectedUpdatedAt: now, status: 'ACTIVE' }),
     ).resolves.toMatchObject({ status: 'ACTIVE' });
     await expect(
-      service.changeStatus({ id: 'keyword-1', expectedUpdatedAt: now, status: 'ACTIVE' }),
+      service.changeStatus({ id: 'keyword-1', expectedUpdatedAt: now, status: 'PAUSED' }),
     ).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
     await expect(
       service.changeStatus({
