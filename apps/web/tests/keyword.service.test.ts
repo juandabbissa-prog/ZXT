@@ -55,7 +55,7 @@ const record = (overrides: Partial<KeywordRecord> = {}): KeywordRecord => ({
 function setup(overrides: Partial<KeywordRepository> = {}) {
   let value = record();
   const keywords: KeywordRepository = {
-    create: async (input) => {
+    create: (input) => {
       value = record({
         phrase: input.phrase,
         normalizedPhrase: input.normalizedPhrase,
@@ -63,68 +63,72 @@ function setup(overrides: Partial<KeywordRepository> = {}) {
         roles: input.roles,
         tagIds: input.tagIds ?? [],
       });
-      return value;
+      return Promise.resolve(value);
     },
-    findById: async (id) => (id === value.id && value.status !== 'DELETED' ? value : null),
-    findByNormalizedPhrase: async (phrase) => (phrase === value.normalizedPhrase ? value : null),
-    list: async (filter, page) => ({
-      items: filter.status && filter.status !== value.status ? [] : [value],
-      page: page.page,
-      pageSize: page.pageSize,
-      total: 1,
-    }),
-    update: async (id, input) => {
-      if (id !== value.id) return { kind: 'NOT_FOUND' };
+    findById: (id) => Promise.resolve(id === value.id && value.status !== 'DELETED' ? value : null),
+    findByNormalizedPhrase: (phrase) =>
+      Promise.resolve(phrase === value.normalizedPhrase ? value : null),
+    list: (filter, page) =>
+      Promise.resolve({
+        items: filter.status && filter.status !== value.status ? [] : [value],
+        page: page.page,
+        pageSize: page.pageSize,
+        total: 1,
+      }),
+    update: (id, input) => {
+      if (id !== value.id) return Promise.resolve({ kind: 'NOT_FOUND' });
       if (input.expectedUpdatedAt.getTime() !== value.updatedAt.getTime())
-        return { kind: 'VERSION_CONFLICT' };
+        return Promise.resolve({ kind: 'VERSION_CONFLICT' });
       value = record({ ...value, ...input, updatedAt: new Date(now.getTime() + 1) });
-      return { kind: 'UPDATED', value };
+      return Promise.resolve({ kind: 'UPDATED', value });
     },
-    softDelete: async (id, expectedUpdatedAt, deletedAt) => {
-      if (id !== value.id) return { kind: 'NOT_FOUND' };
+    softDelete: (id, expectedUpdatedAt, deletedAt) => {
+      if (id !== value.id) return Promise.resolve({ kind: 'NOT_FOUND' });
       if (expectedUpdatedAt.getTime() !== value.updatedAt.getTime())
-        return { kind: 'VERSION_CONFLICT' };
+        return Promise.resolve({ kind: 'VERSION_CONFLICT' });
       value = record({ ...value, status: 'DELETED', deletedAt });
-      return { kind: 'UPDATED', value };
+      return Promise.resolve({ kind: 'UPDATED', value });
     },
-    existsByNormalizedPhrase: async (phrase) => phrase === value.normalizedPhrase,
+    existsByNormalizedPhrase: (phrase) => Promise.resolve(phrase === value.normalizedPhrase),
     ...overrides,
   };
   const categories: KeywordCategoryRepository = {
-    create: async () => activeCategory,
-    findById: async (id) => (id === activeCategory.id ? activeCategory : null),
-    list: async (page) => ({
-      items: [activeCategory],
-      page: page.page,
-      pageSize: page.pageSize,
-      total: 1,
-    }),
-    update: async () => activeCategory,
-    hasChildren: async () => false,
-    isReferenced: async () => false,
-    detectCyclePath: async () => null,
+    create: () => Promise.resolve(activeCategory),
+    findById: (id) => Promise.resolve(id === activeCategory.id ? activeCategory : null),
+    list: (page) =>
+      Promise.resolve({
+        items: [activeCategory],
+        page: page.page,
+        pageSize: page.pageSize,
+        total: 1,
+      }),
+    update: () => Promise.resolve(activeCategory),
+    hasChildren: () => Promise.resolve(false),
+    isReferenced: () => Promise.resolve(false),
+    detectCyclePath: () => Promise.resolve(null),
   };
   const tags: KeywordTagRepository = {
-    create: async () => activeTag,
-    findById: async (id) => (id === activeTag.id ? activeTag : null),
-    list: async (page) => ({
-      items: [activeTag],
-      page: page.page,
-      pageSize: page.pageSize,
-      total: 1,
-    }),
-    update: async () => activeTag,
-    isReferenced: async () => false,
+    create: () => Promise.resolve(activeTag),
+    findById: (id) => Promise.resolve(id === activeTag.id ? activeTag : null),
+    list: (page) =>
+      Promise.resolve({
+        items: [activeTag],
+        page: page.page,
+        pageSize: page.pageSize,
+        total: 1,
+      }),
+    update: () => Promise.resolve(activeTag),
+    isReferenced: () => Promise.resolve(false),
   };
-  const transactions: KeywordTransactionRunner = { run: async (operation) => operation(context) };
+  const transactions: KeywordTransactionRunner = { run: (operation) => operation(context) };
   return { service: new KeywordService(keywords, categories, tags, transactions), keywords };
 }
 
 describe('KeywordService', () => {
   it('normalizes, validates references and creates through the transaction boundary', async () => {
     const { service } = setup({
-      existsByNormalizedPhrase: async () => false,
-      findByNormalizedPhrase: async () => null,
+      existsByNormalizedPhrase: () => Promise.resolve(false),
+      findByNormalizedPhrase: () => Promise.resolve(null),
     });
     const created = await service.create({
       phrase: '  ＨＯＭＥ   Buyer ',
@@ -148,10 +152,8 @@ describe('KeywordService', () => {
 
   it('maps repository persistence uniqueness errors to the public duplicate contract', async () => {
     const { service } = setup({
-      existsByNormalizedPhrase: async () => false,
-      create: async () => {
-        throw new KeywordPersistenceError('UNIQUE');
-      },
+      existsByNormalizedPhrase: () => Promise.resolve(false),
+      create: () => Promise.reject(new KeywordPersistenceError('UNIQUE')),
     });
     await expect(
       service.create({ phrase: 'New', categoryId: activeCategory.id, roles: ['DISCOVERY'] }),

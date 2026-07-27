@@ -17,10 +17,15 @@ import {
 } from '@re-agent/shared';
 import { KeywordPersistenceError } from '../../infrastructure/persistence/keyword-persistence-error';
 
-const roles = new Set<KeywordRole>(['DISCOVERY', 'CONTEXT', 'SIGNAL', 'EXCLUSION']);
 const sources = new Set<KeywordSource>(['MANUAL', 'IMPORT', 'SYSTEM_SUGGESTED', 'API']);
 const matchModes = new Set<MatchMode>(['EXACT', 'PHRASE', 'CONTAINS']);
 const statuses = new Set<KeywordStatus>(['DRAFT', 'ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED']);
+
+function isKeywordRole(value: unknown): value is KeywordRole {
+  return (
+    value === 'DISCOVERY' || value === 'CONTEXT' || value === 'SIGNAL' || value === 'EXCLUSION'
+  );
+}
 
 export type KeywordTransactionRunner = Readonly<{
   run<T>(operation: (context: PersistenceTransactionContext) => Promise<T>): Promise<T>;
@@ -286,14 +291,14 @@ export class KeywordService {
     return { phrase: value, normalizedPhrase: normalizeKeywordPhrase(value) };
   }
 
-  private requireRoles(value: readonly KeywordRole[]): readonly KeywordRole[] {
+  private requireRoles(value: unknown): readonly KeywordRole[] {
     if (!Array.isArray(value) || value.length === 0)
       throw new ValidationError('At least one Keyword role is required.');
-    if (value.some((role) => !roles.has(role)))
-      throw new ValidationError('Keyword role is invalid.');
-    if (new Set(value).size !== value.length)
+    const roleValues: unknown[] = value;
+    if (!roleValues.every(isKeywordRole)) throw new ValidationError('Keyword role is invalid.');
+    if (new Set(roleValues).size !== roleValues.length)
       throw new ValidationError('Keyword roles must be unique.');
-    return value;
+    return roleValues;
   }
 
   private requireSource(value: KeywordSource): KeywordSource {
