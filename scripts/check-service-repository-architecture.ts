@@ -9,10 +9,7 @@ async function filesIn(directory: string): Promise<string[]> {
   const children = await Promise.all(
     entries.map(async (entry) => {
       const fullPath = resolve(directory, entry.name);
-      if (
-        entry.isDirectory() &&
-        ['.git', '.next', '.tools', 'node_modules'].includes(entry.name)
-      )
+      if (entry.isDirectory() && ['.git', '.next', '.tools', 'node_modules'].includes(entry.name))
         return [];
       return entry.isDirectory() ? filesIn(fullPath) : [fullPath];
     }),
@@ -41,8 +38,7 @@ for (const filePath of await filesIn(projectRoot)) {
     violations.push(`Repository imports repository: ${filePath}`);
   if (/from ['"].*\.service['"]/.test(source))
     violations.push(`Repository imports service: ${filePath}`);
-  if (source.includes('$transaction'))
-    violations.push(`Repository opens transaction: ${filePath}`);
+  if (source.includes('$transaction')) violations.push(`Repository opens transaction: ${filePath}`);
   if (source.includes('.keyword.delete('))
     violations.push(`Repository physically deletes Keyword: ${filePath}`);
 }
