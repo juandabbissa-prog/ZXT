@@ -9,5 +9,6 @@ COPY apps/crawler/package.json apps/crawler/package.json
 COPY workers/package.json workers/package.json
 RUN NODE_ENV=development bun install --frozen-lockfile
 COPY . .
+RUN bun run --cwd packages/database prisma:generate
 EXPOSE 3000
-CMD ["bun", "--cwd", "apps/web", "run", "dev"]
+CMD ["bun", "run", "--cwd", "apps/web", "dev"]

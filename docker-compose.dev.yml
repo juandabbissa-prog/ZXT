@@ -1,0 +1,11 @@
+# Local development override only. CI and container-smoke use docker-compose.yml only.
+services:
+  web:
+    volumes:
+      - .:/app
+      - bun_cache:/root/.bun/install/cache
+
+  crawler:
+    volumes:
+      - .:/app
+      - bun_cache:/root/.bun/install/cache

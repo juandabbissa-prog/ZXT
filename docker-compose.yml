@@ -28,7 +28,7 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
-    command: bun run db:migrate && bun --filter @re-agent/web dev
+    command: ["sh", "-c", "bun run --cwd packages/database prisma:migrate && exec bun run --cwd apps/web dev"]
     ports:
       - '${APP_PORT:-3000}:3000'
     env_file: .env.local
@@ -36,7 +36,6 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-re_agent}:${POSTGRES_PASSWORD:-re_agent}@postgres:5432/${POSTGRES_DB:-re_agent}
       REDIS_URL: redis://redis:6379
     volumes:
-      - .:/app
       - bun_cache:/root/.bun/install/cache
     depends_on:
       postgres:
@@ -59,7 +58,7 @@ services:
     build:
       context: .
       dockerfile: docker/crawler.Dockerfile
-    command: bun --filter @re-agent/crawler dev
+    command: ["bun", "--watch", "apps/crawler/src/index.ts"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-re_agent}:${POSTGRES_PASSWORD:-re_agent}@postgres:5432/${POSTGRES_DB:-re_agent}
       REDIS_URL: redis://redis:6379
