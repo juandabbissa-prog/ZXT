@@ -2,7 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@re-agent/database';
 import { PrismaKeywordCategoryRepository } from '../src/features/keyword/keyword-category.repository.prisma';
 import { PrismaKeywordRepository } from '../src/features/keyword/keyword.repository.prisma';
-import { KeywordService, type KeywordTransactionRunner } from '../src/features/keyword/keyword.service';
+import {
+  KeywordService,
+  type KeywordTransactionRunner,
+} from '../src/features/keyword/keyword.service';
 import { PrismaKeywordTagRepository } from '../src/features/keyword/keyword-tag.repository.prisma';
 import { runInTransaction } from '../src/infrastructure/persistence/transaction-runner';
 
@@ -58,7 +61,9 @@ suite('KeywordService integration', () => {
       roles: ['DISCOVERY'],
     });
     expect(created.normalizedPhrase).toBe(phrase);
-    expect((await service.list({ categoryId, status: 'DRAFT' })).items.map((item) => item.id)).toContain(created.id);
+    expect(
+      (await service.list({ categoryId, status: 'DRAFT' })).items.map((item) => item.id),
+    ).toContain(created.id);
 
     const active = await service.changeStatus({
       id: created.id,
@@ -74,7 +79,10 @@ suite('KeywordService integration', () => {
     });
     expect(updated.note).toBe('updated through service');
 
-    const deleted = await service.softDelete({ id: updated.id, expectedUpdatedAt: updated.updatedAt });
+    const deleted = await service.softDelete({
+      id: updated.id,
+      expectedUpdatedAt: updated.updatedAt,
+    });
     expect(deleted.status).toBe('DELETED');
     await expect(service.get(deleted.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });

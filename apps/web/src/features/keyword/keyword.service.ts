@@ -85,7 +85,9 @@ export class KeywordService {
   }
 
   async get(id: string): Promise<KeywordRecord> {
-    const keyword = await this.execute((context) => this.keywords.findById(this.requireId(id, 'id'), context));
+    const keyword = await this.execute((context) =>
+      this.keywords.findById(this.requireId(id, 'id'), context),
+    );
     if (!keyword) throw new KeywordServiceError('Keyword was not found.', 404, 'NOT_FOUND');
     return keyword;
   }
@@ -105,19 +107,27 @@ export class KeywordService {
   async update(command: UpdateKeywordCommand): Promise<KeywordRecord> {
     const id = this.requireId(command.id, 'id');
     const expectedUpdatedAt = this.requireDate(command.expectedUpdatedAt, 'expectedUpdatedAt');
-    if (!command.phrase && !command.categoryId && !command.matchMode && command.note === undefined) {
+    if (
+      !command.phrase &&
+      !command.categoryId &&
+      !command.matchMode &&
+      command.note === undefined
+    ) {
       throw new ValidationError('At least one mutable Keyword field is required.');
     }
     return this.execute(async (context) => {
       const input = {
         expectedUpdatedAt,
         ...(command.phrase !== undefined ? this.toPhraseFields(command.phrase) : {}),
-        ...(command.categoryId ? { categoryId: this.requireId(command.categoryId, 'categoryId') } : {}),
+        ...(command.categoryId
+          ? { categoryId: this.requireId(command.categoryId, 'categoryId') }
+          : {}),
         ...(command.matchMode ? { matchMode: this.requireMatchMode(command.matchMode) } : {}),
         ...(command.note !== undefined ? { note: this.normalizeNote(command.note) } : {}),
       };
       if (input.categoryId) await this.assertActiveCategory(input.categoryId, context);
-      if (input.normalizedPhrase) await this.assertPhraseAvailable(id, input.normalizedPhrase, context);
+      if (input.normalizedPhrase)
+        await this.assertPhraseAvailable(id, input.normalizedPhrase, context);
       return this.requireMutation(await this.keywords.update(id, input, context));
     });
   }
@@ -134,7 +144,11 @@ export class KeywordService {
       const current = await this.keywords.findById(id, context);
       if (!current) throw new KeywordServiceError('Keyword was not found.', 404, 'NOT_FOUND');
       if (!this.isAllowedTransition(current.status, status)) {
-        throw new KeywordServiceError('Keyword status transition is not allowed.', 409, 'INVALID_STATE_TRANSITION');
+        throw new KeywordServiceError(
+          'Keyword status transition is not allowed.',
+          409,
+          'INVALID_STATE_TRANSITION',
+        );
       }
       return this.requireMutation(
         await this.keywords.update(
@@ -150,11 +164,15 @@ export class KeywordService {
     const id = this.requireId(command.id, 'id');
     const expectedUpdatedAt = this.requireDate(command.expectedUpdatedAt, 'expectedUpdatedAt');
     return this.execute((context) =>
-      this.keywords.softDelete(id, expectedUpdatedAt, new Date(), context).then((result) => this.requireMutation(result)),
+      this.keywords
+        .softDelete(id, expectedUpdatedAt, new Date(), context)
+        .then((result) => this.requireMutation(result)),
     );
   }
 
-  private async execute<T>(operation: (context: PersistenceTransactionContext) => Promise<T>): Promise<T> {
+  private async execute<T>(
+    operation: (context: PersistenceTransactionContext) => Promise<T>,
+  ): Promise<T> {
     try {
       return await this.transactions.run(operation);
     } catch (error) {
@@ -184,22 +202,33 @@ export class KeywordService {
       categoryId: this.requireId(command.categoryId, 'categoryId'),
       source: this.requireSource(command.source ?? 'MANUAL'),
       matchMode: this.requireMatchMode(command.matchMode ?? 'EXACT'),
-      ...(command.note !== undefined ? { note: this.normalizeNote(command.note) ?? undefined } : {}),
+      ...(command.note !== undefined
+        ? { note: this.normalizeNote(command.note) ?? undefined }
+        : {}),
       roles: this.requireRoles(command.roles),
       ...(tagIds.length ? { tagIds } : {}),
       ...(variants.length ? { variants } : {}),
     };
   }
 
-  private async assertPhraseAvailable(id: string, normalizedPhrase: string, context: PersistenceTransactionContext) {
+  private async assertPhraseAvailable(
+    id: string,
+    normalizedPhrase: string,
+    context: PersistenceTransactionContext,
+  ) {
     const existing = await this.keywords.findByNormalizedPhrase(normalizedPhrase, context);
-    if (existing && existing.id !== id) throw new KeywordServiceError('Keyword phrase already exists.', 409, 'KEYWORD_DUPLICATE');
+    if (existing && existing.id !== id)
+      throw new KeywordServiceError('Keyword phrase already exists.', 409, 'KEYWORD_DUPLICATE');
   }
 
   private async assertActiveCategory(id: string, context: PersistenceTransactionContext) {
     const category = await this.categories.findById(id, context);
     if (!category || category.status !== 'ACTIVE') {
-      throw new KeywordServiceError('Keyword category must exist and be active.', 400, 'VALIDATION_ERROR');
+      throw new KeywordServiceError(
+        'Keyword category must exist and be active.',
+        400,
+        'VALIDATION_ERROR',
+      );
     }
   }
 
@@ -207,20 +236,31 @@ export class KeywordService {
     for (const id of ids) {
       const tag = await this.tags.findById(id, context);
       if (!tag || tag.status !== 'ACTIVE') {
-        throw new KeywordServiceError('Keyword tag must exist and be active.', 400, 'VALIDATION_ERROR');
+        throw new KeywordServiceError(
+          'Keyword tag must exist and be active.',
+          400,
+          'VALIDATION_ERROR',
+        );
       }
     }
   }
 
   private requireMutation(result: Awaited<ReturnType<KeywordRepository['update']>>): KeywordRecord {
     if (result.kind === 'UPDATED') return result.value;
-    if (result.kind === 'VERSION_CONFLICT') throw new KeywordServiceError('Keyword was changed by another operation.', 409, 'VERSION_CONFLICT');
+    if (result.kind === 'VERSION_CONFLICT')
+      throw new KeywordServiceError(
+        'Keyword was changed by another operation.',
+        409,
+        'VERSION_CONFLICT',
+      );
     throw new KeywordServiceError('Keyword was not found.', 404, 'NOT_FOUND');
   }
 
   private mapPersistenceError(error: KeywordPersistenceError): AppError {
-    if (error.kind === 'UNIQUE') return new KeywordServiceError('Keyword phrase already exists.', 409, 'KEYWORD_DUPLICATE');
-    if (error.kind === 'FOREIGN_KEY') return new KeywordServiceError('Keyword reference does not exist.', 400, 'VALIDATION_ERROR');
+    if (error.kind === 'UNIQUE')
+      return new KeywordServiceError('Keyword phrase already exists.', 409, 'KEYWORD_DUPLICATE');
+    if (error.kind === 'FOREIGN_KEY')
+      return new KeywordServiceError('Keyword reference does not exist.', 400, 'VALIDATION_ERROR');
     return new AppError('Keyword operation could not be completed.');
   }
 
@@ -236,7 +276,8 @@ export class KeywordService {
   private requirePhrase(value: string): string {
     if (typeof value !== 'string') throw new ValidationError('Keyword phrase is required.');
     const phrase = value.trim();
-    if (phrase.length < 1 || phrase.length > 120) throw new ValidationError('Keyword phrase must contain between 1 and 120 characters.');
+    if (phrase.length < 1 || phrase.length > 120)
+      throw new ValidationError('Keyword phrase must contain between 1 and 120 characters.');
     return phrase;
   }
 
@@ -246,9 +287,12 @@ export class KeywordService {
   }
 
   private requireRoles(value: readonly KeywordRole[]): readonly KeywordRole[] {
-    if (!Array.isArray(value) || value.length === 0) throw new ValidationError('At least one Keyword role is required.');
-    if (value.some((role) => !roles.has(role))) throw new ValidationError('Keyword role is invalid.');
-    if (new Set(value).size !== value.length) throw new ValidationError('Keyword roles must be unique.');
+    if (!Array.isArray(value) || value.length === 0)
+      throw new ValidationError('At least one Keyword role is required.');
+    if (value.some((role) => !roles.has(role)))
+      throw new ValidationError('Keyword role is invalid.');
+    if (new Set(value).size !== value.length)
+      throw new ValidationError('Keyword roles must be unique.');
     return value;
   }
 
@@ -268,28 +312,33 @@ export class KeywordService {
   }
 
   private requireId(value: string, name: string): string {
-    if (typeof value !== 'string' || !value.trim()) throw new ValidationError(`${name} is required.`);
+    if (typeof value !== 'string' || !value.trim())
+      throw new ValidationError(`${name} is required.`);
     return value;
   }
 
   private uniqueIds(values: readonly string[], name: string): readonly string[] {
     const ids = values.map((value) => this.requireId(value, name));
-    if (new Set(ids).size !== ids.length) throw new ValidationError(`${name} must not contain duplicates.`);
+    if (new Set(ids).size !== ids.length)
+      throw new ValidationError(`${name} must not contain duplicates.`);
     return ids;
   }
 
   private requireDate(value: Date, name: string): Date {
-    if (!(value instanceof Date) || Number.isNaN(value.getTime())) throw new ValidationError(`${name} must be a valid Date.`);
+    if (!(value instanceof Date) || Number.isNaN(value.getTime()))
+      throw new ValidationError(`${name} must be a valid Date.`);
     return value;
   }
 
   private requirePositiveInteger(value: number, name: string): number {
-    if (!Number.isInteger(value) || value < 1) throw new ValidationError(`${name} must be a positive integer.`);
+    if (!Number.isInteger(value) || value < 1)
+      throw new ValidationError(`${name} must be a positive integer.`);
     return value;
   }
 
   private requirePageSize(value: number): number {
-    if (!Number.isInteger(value) || value < 1 || value > 100) throw new ValidationError('pageSize must be an integer between 1 and 100.');
+    if (!Number.isInteger(value) || value < 1 || value > 100)
+      throw new ValidationError('pageSize must be an integer between 1 and 100.');
     return value;
   }
 
@@ -297,7 +346,8 @@ export class KeywordService {
     if (value === null) return null;
     if (typeof value !== 'string') throw new ValidationError('Keyword note must be text.');
     const note = value.trim();
-    if (note.length > 1000) throw new ValidationError('Keyword note must not exceed 1000 characters.');
+    if (note.length > 1000)
+      throw new ValidationError('Keyword note must not exceed 1000 characters.');
     return note || null;
   }
 }
