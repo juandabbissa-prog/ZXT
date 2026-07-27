@@ -28,7 +28,12 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
-    command: ["sh", "-c", "bun run --cwd packages/database prisma:migrate && exec bun run --cwd apps/web dev"]
+    command:
+      [
+        'sh',
+        '-c',
+        'bun run --cwd packages/database prisma:migrate && exec bun run --cwd apps/web dev',
+      ]
     ports:
       - '${APP_PORT:-3000}:3000'
     env_file: .env.local
@@ -58,7 +63,7 @@ services:
     build:
       context: .
       dockerfile: docker/crawler.Dockerfile
-    command: ["bun", "--watch", "apps/crawler/src/index.ts"]
+    command: ['bun', '--watch', 'apps/crawler/src/index.ts']
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-re_agent}:${POSTGRES_PASSWORD:-re_agent}@postgres:5432/${POSTGRES_DB:-re_agent}
       REDIS_URL: redis://redis:6379
