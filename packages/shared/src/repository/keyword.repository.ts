@@ -89,6 +89,9 @@ export type UpdateKeywordInput = Readonly<{
   categoryId?: string;
   matchMode?: MatchMode;
   note?: string | null;
+  /** Backwards-compatible Sprint 2.2 extension for Service-owned state transitions. */
+  status?: Exclude<KeywordStatus, 'DELETED'>;
+  archivedAt?: Date | null;
 }>;
 export type KeywordListFilter = Readonly<{
   status?: KeywordStatus;

@@ -20,7 +20,7 @@ async function filesIn(directory: string): Promise<string[]> {
 for (const filePath of await filesIn(resolve(projectRoot, 'apps'))) {
   const source = await Bun.file(filePath).text();
   const isRoute = filePath.endsWith('route.ts');
-  const isService = filePath.includes('.service.');
+  const isService = filePath.endsWith('.service.ts');
   if (
     (isRoute || isService) &&
     (source.includes("from '@prisma/client'") ||

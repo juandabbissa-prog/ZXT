@@ -122,6 +122,8 @@ export class PrismaKeywordRepository implements KeywordRepository {
         categoryId: input.categoryId,
         matchMode: input.matchMode,
         note: input.note,
+        status: input.status,
+        archivedAt: input.archivedAt,
       },
     });
     if (!result.count) return { kind: 'VERSION_CONFLICT' };
