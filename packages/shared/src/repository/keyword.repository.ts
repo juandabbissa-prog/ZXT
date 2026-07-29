@@ -1,4 +1,8 @@
 /** Frozen Keyword Catalog persistence contracts. They never expose Prisma types. */
+import type { Page, PageRequest, PersistenceTransactionContext } from './persistence';
+
+export type { Page, PageRequest, PersistenceTransactionContext } from './persistence';
+
 export type KeywordId = string;
 export type KeywordRole = 'DISCOVERY' | 'CONTEXT' | 'SIGNAL' | 'EXCLUSION';
 export type KeywordSource = 'MANUAL' | 'IMPORT' | 'SYSTEM_SUGGESTED' | 'API';
@@ -6,27 +10,12 @@ export type KeywordStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'DELETE
 export type MatchMode = 'EXACT' | 'PHRASE' | 'CONTAINS';
 export type ReferenceStatus = 'ACTIVE' | 'ARCHIVED';
 
-export type Page<T> = Readonly<{
-  items: readonly T[];
-  page: number;
-  pageSize: number;
-  total: number;
-}>;
-export type PageRequest = Readonly<{
-  page: number;
-  pageSize: number;
-  sort?: 'UPDATED_AT_DESC' | 'CREATED_AT_DESC' | 'PHRASE_ASC';
-}>;
 export type ConditionalMutationResult<T> = Readonly<
   | { kind: 'UPDATED'; value: T }
   | { kind: 'NOT_FOUND' }
   | { kind: 'VERSION_CONFLICT' }
   | { kind: 'DELETED' }
 >;
-/** Opaque context supplied by Service-owned transaction orchestration, never Prisma types. */
-export type PersistenceTransactionContext = Readonly<{
-  readonly __persistenceTransaction: unique symbol;
-}>;
 
 export type KeywordRecord = Readonly<{
   id: KeywordId;
