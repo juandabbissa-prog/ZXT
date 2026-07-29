@@ -40,6 +40,32 @@ enum ReferenceStatus {
   ARCHIVED
 }
 
+enum PlatformAccountStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum AnchorPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum AnchorStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum AnchorRiskLevel {
+  UNKNOWN
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model SystemConfig {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -155,4 +181,63 @@ model KeywordTagLink {
   @@id([keywordId, tagId])
   @@index([tagId])
   @@map("keyword_tag_links")
+}
+
+model PlatformAccount {
+  id                String                @id @default(uuid()) @db.Uuid
+  platform          String                @db.VarChar(64)
+  accountName       String                @map("account_name") @db.VarChar(160)
+  accountIdentifier String                @map("account_identifier") @db.VarChar(160)
+  profileUrl        String                @map("profile_url") @db.VarChar(2048)
+  followerCount     Int                   @default(0) @map("follower_count")
+  contentDomains    String[]              @default([]) @map("content_domains")
+  regionTags        String[]              @default([]) @map("region_tags")
+  status            PlatformAccountStatus @default(ACTIVE)
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  anchor            Anchor?
+
+  @@unique([platform, accountIdentifier])
+  @@index([platform])
+  @@index([status])
+  @@index([updatedAt(sort: Desc)])
+  @@map("platform_accounts")
+}
+
+model Anchor {
+  id                String              @id @default(uuid()) @db.Uuid
+  name              String              @db.VarChar(160)
+  platformAccountId String              @unique @map("platform_account_id") @db.Uuid
+  observationReason String              @map("observation_reason") @db.VarChar(1000)
+  tags              String[]            @default([])
+  priority          AnchorPriority      @default(NORMAL)
+  status            AnchorStatus        @default(ACTIVE)
+  riskLevel         AnchorRiskLevel     @default(UNKNOWN) @map("risk_level")
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt        DateTime?           @map("archived_at") @db.Timestamptz(3)
+  platformAccount   PlatformAccount     @relation(fields: [platformAccountId], references: [id], onDelete: Restrict)
+  observations      ObservationRecord[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([riskLevel])
+  @@index([updatedAt(sort: Desc)])
+  @@map("anchors")
+}
+
+model ObservationRecord {
+  id         String   @id @default(uuid()) @db.Uuid
+  anchorId   String   @map("anchor_id") @db.Uuid
+  observedAt DateTime @map("observed_at") @db.Timestamptz(3)
+  source     String   @db.VarChar(64)
+  result     String   @db.VarChar(2000)
+  notes      String?  @db.VarChar(2000)
+  confidence Int
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  anchor     Anchor   @relation(fields: [anchorId], references: [id], onDelete: Restrict)
+
+  @@index([anchorId, observedAt(sort: Desc)])
+  @@index([source])
+  @@map("observation_records")
 }

@@ -228,20 +228,20 @@ CI 测试
 
 ## 9. 当前项目状态表
 
-| 模块 | 状态 | 说明 |
-|---|---|---|
-| 项目工程与 CI 基础 | PASS / Frozen | Sprint 2.1 完成；具备 Prisma、测试、Build 与 Docker Smoke 验收能力 |
-| Keyword Repository / Persistence | PASS / Frozen | Repository、Prisma、Migration、Seed 与集成测试已纳入冻结基线 |
-| Keyword Service | PASS / Frozen | Sprint 2.2 完成并合并；合并后 CI 全绿 |
-| ADR-0007 平台合规与 Adapter | Frozen | 约束合规接入、平台中立和风险隔离 |
-| ADR-0008 生产运行架构 | Frozen | 约束云端、Web、后台 Agent、Docker 与 CI/CD 方向 |
-| ADR-0009 Buyer Persona Engine | Frozen | 冻结房产客户画像领域方向，不包含实现 |
-| Anchor Center | 准备阶段 | Sprint 3.0 独立分支和干净工作区已准备；尚未开发 |
-| Content Signal | 未开始 | 计划在后续独立 Sprint 实现 |
-| Buyer Persona Engine | 架构已冻结 / 开发未开始 | 仅完成 ADR-0009，未实现算法或服务 |
-| Lead Scoring | 未开始 | 等待前置业务链路完成和独立任务书 |
-| AI Sales Agent | 未开始 | 等待 Lead 与画像能力完成和独立授权 |
-| CRM 集成 | 未开始 | 核心链路末端能力，尚未进入开发 |
+| 模块                             | 状态                    | 说明                                                               |
+| -------------------------------- | ----------------------- | ------------------------------------------------------------------ |
+| 项目工程与 CI 基础               | PASS / Frozen           | Sprint 2.1 完成；具备 Prisma、测试、Build 与 Docker Smoke 验收能力 |
+| Keyword Repository / Persistence | PASS / Frozen           | Repository、Prisma、Migration、Seed 与集成测试已纳入冻结基线       |
+| Keyword Service                  | PASS / Frozen           | Sprint 2.2 完成并合并；合并后 CI 全绿                              |
+| ADR-0007 平台合规与 Adapter      | Frozen                  | 约束合规接入、平台中立和风险隔离                                   |
+| ADR-0008 生产运行架构            | Frozen                  | 约束云端、Web、后台 Agent、Docker 与 CI/CD 方向                    |
+| ADR-0009 Buyer Persona Engine    | Frozen                  | 冻结房产客户画像领域方向，不包含实现                               |
+| Anchor Center                    | 准备阶段                | Sprint 3.0 独立分支和干净工作区已准备；尚未开发                    |
+| Content Signal                   | 未开始                  | 计划在后续独立 Sprint 实现                                         |
+| Buyer Persona Engine             | 架构已冻结 / 开发未开始 | 仅完成 ADR-0009，未实现算法或服务                                  |
+| Lead Scoring                     | 未开始                  | 等待前置业务链路完成和独立任务书                                   |
+| AI Sales Agent                   | 未开始                  | 等待 Lead 与画像能力完成和独立授权                                 |
+| CRM 集成                         | 未开始                  | 核心链路末端能力，尚未进入开发                                     |
 
 ## 10. 下一阶段路线
 
