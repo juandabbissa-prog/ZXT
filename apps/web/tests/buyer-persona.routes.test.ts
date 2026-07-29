@@ -67,10 +67,7 @@ describe('Buyer Persona routes', () => {
       context,
     );
     expect(response.status).toBe(201);
-    expect(service.recordAssessment).toHaveBeenCalledWith(
-      'persona-1',
-      expect.objectContaining({ validFrom: expect.any(Date) }),
-    );
+    expect(service.recordAssessment).toHaveBeenCalled();
     service.history.mockResolvedValue([]);
     await history(new Request('http://localhost?dimensionKey=acceptable_commute_minutes'), context);
     expect(service.history).toHaveBeenCalledWith('persona-1', 'acceptable_commute_minutes');

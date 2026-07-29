@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BuyerPersonaRepository, ContentSignalRepository } from '@re-agent/shared';
+import type { ContentSignalRepository } from '@re-agent/shared';
 import { BuyerPersonaService } from '../src/features/buyer-persona/buyer-persona.service';
 
 const persona = {
@@ -32,7 +32,7 @@ const repositories = {
 
 describe('BuyerPersonaService', () => {
   const service = new BuyerPersonaService(
-    repositories.personas as unknown as BuyerPersonaRepository,
+    repositories.personas,
     repositories.signals as unknown as ContentSignalRepository,
     { run: async (operation) => operation({} as never) },
   );
@@ -60,18 +60,37 @@ describe('BuyerPersonaService', () => {
       status: 'ACTIVE',
       evidence: [{ id: 'evidence-1', observedAt: new Date('2026-07-29T00:00:00Z') }],
     });
-    repositories.personas.saveDimensionAssessment.mockImplementation(async (input) => ({
-      ...input,
+    repositories.personas.saveDimensionAssessment.mockResolvedValue({
+      buyerPersonaId: 'persona-1',
+      category: 'BUDGET_RANGE',
+      dimensionKey: 'total_price_range',
+      normalizedValue: { minimum: 120, maximum: 180, unit: 'CNY_10K' },
+      cognitiveStatus: 'INFERENCE',
+      confidence: 70,
+      rationale: 'Signal explicitly discusses a budget range.',
+      validFrom: new Date('2026-07-29T00:00:00Z'),
+      validUntil: null,
+      assessedAt: new Date('2026-07-29T00:00:00Z'),
+      version: 1,
+      changeReason: null,
       id: 'assessment-1',
       status: 'CURRENT',
       supersededAt: null,
       createdAt: new Date(),
-    }));
-    repositories.personas.addEvidenceLink.mockImplementation(async (input) => ({
-      ...input,
+    });
+    repositories.personas.addEvidenceLink.mockResolvedValue({
       id: 'link-1',
+      buyerPersonaId: 'persona-1',
+      assessmentId: 'assessment-1',
+      contentSignalId: 'signal-1',
+      signalEvidenceId: 'evidence-1',
+      relation: 'SUPPORTS',
+      observedAt: new Date('2026-07-29T00:00:00Z'),
       linkedAt: new Date(),
-    }));
+      reason: 'Direct budget discussion.',
+      confidenceSnapshot: 70,
+      validUntilSnapshot: null,
+    });
 
     await service.recordAssessment('persona-1', {
       category: 'BUDGET_RANGE',
@@ -120,11 +139,18 @@ describe('BuyerPersonaService', () => {
     repositories.personas.findPersonaById.mockResolvedValue(persona);
     repositories.personas.findCurrentAssessments.mockResolvedValue([]);
     repositories.personas.findEvidenceLinks.mockResolvedValue([]);
-    repositories.personas.createSnapshot.mockImplementation(async (input) => ({
-      ...input,
+    repositories.personas.createSnapshot.mockResolvedValue({
       id: 'snapshot-1',
+      buyerPersonaId: 'persona-1',
+      snapshotVersion: 1,
+      personaVersion: 1,
+      dimensions: {},
+      evidenceSummary: [],
+      missingDimensions: [],
       generatedAt: new Date(),
-    }));
+      validUntil: null,
+      reason: 'Manual review baseline.',
+    });
     const snapshot = await service.generateSnapshot('persona-1', {
       reason: 'Manual review baseline.',
       validUntil: null,

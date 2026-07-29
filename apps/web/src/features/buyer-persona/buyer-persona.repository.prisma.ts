@@ -30,7 +30,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
     const row = await resolvePrismaExecutor(this.prisma, context).buyerPersona.create({
       data: input,
     });
-    return toBuyerPersonaRecord(row as BuyerPersonaRecord);
+    return toBuyerPersonaRecord(row);
   }
 
   async findPersonaById(
@@ -40,7 +40,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
     const row = await resolvePrismaExecutor(this.prisma, context).buyerPersona.findUnique({
       where: { id },
     });
-    return row ? toBuyerPersonaRecord(row as BuyerPersonaRecord) : null;
+    return row ? toBuyerPersonaRecord(row) : null;
   }
 
   async findPersonaBySubjectReference(
@@ -50,7 +50,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
     const row = await resolvePrismaExecutor(this.prisma, context).buyerPersona.findUnique({
       where: { subjectReference },
     });
-    return row ? toBuyerPersonaRecord(row as BuyerPersonaRecord) : null;
+    return row ? toBuyerPersonaRecord(row) : null;
   }
 
   async addEvidenceLink(
@@ -60,7 +60,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
     const row = await resolvePrismaExecutor(this.prisma, context).personaEvidenceLink.create({
       data: input,
     });
-    return toPersonaEvidenceLinkRecord(row as PersonaEvidenceLinkRecord);
+    return toPersonaEvidenceLinkRecord(row);
   }
 
   async findEvidenceLinks(
@@ -72,7 +72,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
       where: { buyerPersonaId, ...(assessmentId ? { assessmentId } : {}) },
       orderBy: [{ linkedAt: 'desc' }, { id: 'desc' }],
     });
-    return rows.map((row) => toPersonaEvidenceLinkRecord(row as PersonaEvidenceLinkRecord));
+    return rows.map((row) => toPersonaEvidenceLinkRecord(row));
   }
 
   async saveDimensionAssessment(
@@ -98,7 +98,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
       where: { id: input.buyerPersonaId },
       data: { lastAssessedAt: input.assessedAt, version: { increment: 1 } },
     });
-    return toPersonaAssessmentRecord(row as PersonaDimensionAssessmentRecord);
+    return toPersonaAssessmentRecord(row);
   }
 
   async findCurrentAssessments(
@@ -112,7 +112,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
       where: { buyerPersonaId, status: 'CURRENT' },
       orderBy: [{ category: 'asc' }, { dimensionKey: 'asc' }],
     });
-    return rows.map((row) => toPersonaAssessmentRecord(row as PersonaDimensionAssessmentRecord));
+    return rows.map((row) => toPersonaAssessmentRecord(row));
   }
 
   async findAssessmentHistory(
@@ -127,7 +127,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
       where: { buyerPersonaId, dimensionKey },
       orderBy: [{ version: 'desc' }, { assessedAt: 'desc' }],
     });
-    return rows.map((row) => toPersonaAssessmentRecord(row as PersonaDimensionAssessmentRecord));
+    return rows.map((row) => toPersonaAssessmentRecord(row));
   }
 
   async createSnapshot(
@@ -147,7 +147,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
       where: { id: input.buyerPersonaId },
       data: { latestSnapshotId: row.id },
     });
-    return toPersonaSnapshotRecord(row as PersonaSnapshotRecord);
+    return toPersonaSnapshotRecord(row);
   }
 
   async findLatestValidSnapshot(
@@ -162,7 +162,7 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
       },
       orderBy: [{ snapshotVersion: 'desc' }],
     });
-    return row ? toPersonaSnapshotRecord(row as PersonaSnapshotRecord) : null;
+    return row ? toPersonaSnapshotRecord(row) : null;
   }
 
   async updatePersonaStatus(
@@ -179,6 +179,6 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
       where: { id },
       data: { status, archivedAt },
     });
-    return toBuyerPersonaRecord(row as BuyerPersonaRecord);
+    return toBuyerPersonaRecord(row);
   }
 }
