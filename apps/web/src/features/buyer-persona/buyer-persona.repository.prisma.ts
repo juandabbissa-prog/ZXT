@@ -105,12 +105,13 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
     buyerPersonaId: string,
     context?: PersistenceTransactionContext,
   ): Promise<PersonaDimensionAssessmentRecord[]> {
-    const rows = await resolvePrismaExecutor(this.prisma, context).personaDimensionAssessment.findMany(
-      {
-        where: { buyerPersonaId, status: 'CURRENT' },
-        orderBy: [{ category: 'asc' }, { dimensionKey: 'asc' }],
-      },
-    );
+    const rows = await resolvePrismaExecutor(
+      this.prisma,
+      context,
+    ).personaDimensionAssessment.findMany({
+      where: { buyerPersonaId, status: 'CURRENT' },
+      orderBy: [{ category: 'asc' }, { dimensionKey: 'asc' }],
+    });
     return rows.map((row) => toPersonaAssessmentRecord(row as PersonaDimensionAssessmentRecord));
   }
 
@@ -119,12 +120,13 @@ export class PrismaBuyerPersonaRepository implements BuyerPersonaRepository {
     dimensionKey: string,
     context?: PersistenceTransactionContext,
   ): Promise<PersonaDimensionAssessmentRecord[]> {
-    const rows = await resolvePrismaExecutor(this.prisma, context).personaDimensionAssessment.findMany(
-      {
-        where: { buyerPersonaId, dimensionKey },
-        orderBy: [{ version: 'desc' }, { assessedAt: 'desc' }],
-      },
-    );
+    const rows = await resolvePrismaExecutor(
+      this.prisma,
+      context,
+    ).personaDimensionAssessment.findMany({
+      where: { buyerPersonaId, dimensionKey },
+      orderBy: [{ version: 'desc' }, { assessedAt: 'desc' }],
+    });
     return rows.map((row) => toPersonaAssessmentRecord(row as PersonaDimensionAssessmentRecord));
   }
 

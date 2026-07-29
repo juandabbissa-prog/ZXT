@@ -46,7 +46,9 @@ describe('BuyerPersonaService', () => {
       persona,
     );
     repositories.personas.findPersonaBySubjectReference.mockResolvedValueOnce(persona);
-    await expect(service.create({ subjectReference: 'authorized-subject-1' })).rejects.toMatchObject({
+    await expect(
+      service.create({ subjectReference: 'authorized-subject-1' }),
+    ).rejects.toMatchObject({
       code: 'BUYER_PERSONA_ALREADY_EXISTS',
     });
   });

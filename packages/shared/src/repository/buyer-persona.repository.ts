@@ -66,18 +66,12 @@ export interface PersonaSnapshotRecord {
 }
 
 export type CreateBuyerPersonaInput = { subjectReference: string | null };
-export type AddPersonaEvidenceLinkInput = Omit<
-  PersonaEvidenceLinkRecord,
-  'id' | 'linkedAt'
->;
+export type AddPersonaEvidenceLinkInput = Omit<PersonaEvidenceLinkRecord, 'id' | 'linkedAt'>;
 export type SavePersonaAssessmentInput = Omit<
   PersonaDimensionAssessmentRecord,
   'id' | 'status' | 'supersededAt' | 'createdAt'
 >;
-export type CreatePersonaSnapshotInput = Omit<
-  PersonaSnapshotRecord,
-  'id' | 'generatedAt'
->;
+export type CreatePersonaSnapshotInput = Omit<PersonaSnapshotRecord, 'id' | 'generatedAt'>;
 
 export interface BuyerPersonaRepository {
   createPersona(

@@ -112,7 +112,10 @@ export class BuyerPersonaService {
       }
       const evidenceRows = [];
       for (const reference of command.evidence) {
-        const signal = await this.signals.findById(this.requireId(reference.contentSignalId), context);
+        const signal = await this.signals.findById(
+          this.requireId(reference.contentSignalId),
+          context,
+        );
         if (!signal) {
           throw new BuyerPersonaServiceError(
             'Content Signal was not found.',
@@ -132,11 +135,7 @@ export class BuyerPersonaService {
         }
         evidenceRows.push({ reference, signal, evidence });
       }
-      const previous = await this.personas.findAssessmentHistory(
-        id,
-        command.dimensionKey,
-        context,
-      );
+      const previous = await this.personas.findAssessmentHistory(id, command.dimensionKey, context);
       const assessment = await this.personas.saveDimensionAssessment(
         {
           buyerPersonaId: id,

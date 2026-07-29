@@ -72,14 +72,8 @@ describe('Buyer Persona routes', () => {
       expect.objectContaining({ validFrom: expect.any(Date) }),
     );
     service.history.mockResolvedValue([]);
-    await history(
-      new Request('http://localhost?dimensionKey=acceptable_commute_minutes'),
-      context,
-    );
-    expect(service.history).toHaveBeenCalledWith(
-      'persona-1',
-      'acceptable_commute_minutes',
-    );
+    await history(new Request('http://localhost?dimensionKey=acceptable_commute_minutes'), context);
+    expect(service.history).toHaveBeenCalledWith('persona-1', 'acceptable_commute_minutes');
   });
 
   it('creates and retrieves an immutable Snapshot and changes status', async () => {

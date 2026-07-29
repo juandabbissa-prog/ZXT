@@ -15,9 +15,7 @@ describe('Buyer Persona domain', () => {
   });
 
   it('requires evidence for FACT and INFERENCE assessments', () => {
-    expect(() => assertAssessmentEvidence('FACT', [])).toThrow(
-      'FACT assessments require evidence',
-    );
+    expect(() => assertAssessmentEvidence('FACT', [])).toThrow('FACT assessments require evidence');
     expect(() => assertAssessmentEvidence('INFERENCE', [])).toThrow(
       'INFERENCE assessments require evidence',
     );
