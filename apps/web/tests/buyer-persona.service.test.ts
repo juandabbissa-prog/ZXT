@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ContentSignalRepository } from '@re-agent/shared';
+import type {
+  BuyerPersonaRepository,
+  ContentSignalRepository,
+  PersonaSnapshotRecord,
+} from '@re-agent/shared';
 import { BuyerPersonaService } from '../src/features/buyer-persona/buyer-persona.service';
 
 const persona = {
@@ -41,11 +45,16 @@ describe('BuyerPersonaService', () => {
     vi.resetAllMocks();
     repositories.personas.findAssessmentHistory.mockResolvedValue([]);
     repositories.personas.findLatestValidSnapshot.mockResolvedValue(null);
-    repositories.personas.createSnapshot.mockImplementation(async (input) => ({
-      ...input,
-      id: 'snapshot-1',
-      generatedAt: new Date(),
-    }));
+    repositories.personas.createSnapshot.mockImplementation(
+      (
+        input: Parameters<BuyerPersonaRepository['createSnapshot']>[0],
+      ): Promise<PersonaSnapshotRecord> =>
+        Promise.resolve({
+          ...input,
+          id: 'snapshot-1',
+          generatedAt: new Date(),
+        }),
+    );
   });
 
   it('creates a platform-neutral draft and rejects duplicate subject references', async () => {
