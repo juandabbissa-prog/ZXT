@@ -18,6 +18,8 @@ suite('keyword repository integration', () => {
   const phrase = () => `keyword-${++serial}`;
 
   beforeAll(async () => {
+    await prisma.signalEvidence.deleteMany();
+    await prisma.contentSignal.deleteMany();
     await prisma.keywordTagLink.deleteMany();
     await prisma.keywordRoleLink.deleteMany();
     await prisma.keywordVariant.deleteMany();
@@ -37,6 +39,8 @@ suite('keyword repository integration', () => {
   });
 
   afterAll(async () => {
+    await prisma.signalEvidence.deleteMany();
+    await prisma.contentSignal.deleteMany();
     await prisma.keywordTagLink.deleteMany();
     await prisma.keywordRoleLink.deleteMany();
     await prisma.keywordVariant.deleteMany();
