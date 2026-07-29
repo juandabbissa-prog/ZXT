@@ -1,6 +1,9 @@
 import { prisma } from '@re-agent/database';
 
 export async function clearIntegrationData() {
+  await prisma.leadScoreEvidenceLink.deleteMany();
+  await prisma.leadScoreBasis.deleteMany();
+  await prisma.leadScoreAssessment.deleteMany();
   await prisma.buyerPersona.updateMany({ data: { latestSnapshotId: null } });
   await prisma.personaEvidenceLink.deleteMany();
   await prisma.personaDimensionAssessment.deleteMany();
