@@ -136,6 +136,34 @@ enum PersonaEvidenceRelation {
   CONTEXT_ONLY
 }
 
+enum PurchaseStage {
+  UNKNOWN
+  AWARENESS
+  EXPLORATION
+  COMPARISON
+  DECISION_PREPARATION
+}
+
+enum LeadGrade {
+  UNASSESSED
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ScoreBasisType {
+  PERSONA_DIMENSION
+  CONTENT_SIGNAL
+  EVIDENCE
+  PERSONA_SNAPSHOT
+}
+
+enum ScoreBasisDirection {
+  SUPPORTS
+  CONTRADICTS
+  CONTEXT_ONLY
+}
+
 model SystemConfig {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -373,6 +401,7 @@ model BuyerPersona {
   evidenceLinks    PersonaEvidenceLink[]
   snapshots        PersonaSnapshot[]            @relation("PersonaSnapshots")
   latestSnapshot   PersonaSnapshot?             @relation("LatestPersonaSnapshot", fields: [latestSnapshotId], references: [id], onDelete: Restrict)
+  leadAssessments  LeadScoreAssessment[]
 
   @@index([status])
   @@index([updatedAt(sort: Desc)])
@@ -431,20 +460,79 @@ model PersonaEvidenceLink {
 }
 
 model PersonaSnapshot {
-  id                String        @id @default(uuid()) @db.Uuid
-  buyerPersonaId    String        @map("buyer_persona_id") @db.Uuid
-  snapshotVersion   Int           @map("snapshot_version")
-  personaVersion    Int           @map("persona_version")
+  id                String                @id @default(uuid()) @db.Uuid
+  buyerPersonaId    String                @map("buyer_persona_id") @db.Uuid
+  snapshotVersion   Int                   @map("snapshot_version")
+  personaVersion    Int                   @map("persona_version")
   dimensions        Json
-  evidenceSummary   Json          @map("evidence_summary")
-  missingDimensions Json          @map("missing_dimensions")
-  generatedAt       DateTime      @default(now()) @map("generated_at") @db.Timestamptz(3)
-  validUntil        DateTime?     @map("valid_until") @db.Timestamptz(3)
-  reason            String?       @db.VarChar(500)
-  buyerPersona      BuyerPersona  @relation("PersonaSnapshots", fields: [buyerPersonaId], references: [id], onDelete: Restrict)
-  latestForPersona  BuyerPersona? @relation("LatestPersonaSnapshot")
+  evidenceSummary   Json                  @map("evidence_summary")
+  missingDimensions Json                  @map("missing_dimensions")
+  generatedAt       DateTime              @default(now()) @map("generated_at") @db.Timestamptz(3)
+  validUntil        DateTime?             @map("valid_until") @db.Timestamptz(3)
+  reason            String?               @db.VarChar(500)
+  buyerPersona      BuyerPersona          @relation("PersonaSnapshots", fields: [buyerPersonaId], references: [id], onDelete: Restrict)
+  latestForPersona  BuyerPersona?         @relation("LatestPersonaSnapshot")
+  leadAssessments   LeadScoreAssessment[]
 
   @@unique([buyerPersonaId, snapshotVersion])
   @@index([buyerPersonaId, generatedAt(sort: Desc)])
   @@map("persona_snapshots")
+}
+
+model LeadScoreAssessment {
+  id                String                  @id @default(uuid()) @db.Uuid
+  personaId         String                  @map("persona_id") @db.Uuid
+  personaSnapshotId String                  @map("persona_snapshot_id") @db.Uuid
+  purchaseStage     PurchaseStage           @map("purchase_stage")
+  leadGrade         LeadGrade               @map("lead_grade")
+  score             Int
+  confidence        Int
+  explanation       String                  @db.VarChar(2000)
+  policyVersion     String                  @map("policy_version") @db.VarChar(64)
+  inputFingerprint  String                  @map("input_fingerprint") @db.VarChar(128)
+  assessedAt        DateTime                @map("assessed_at") @db.Timestamptz(3)
+  expiresAt         DateTime?               @map("expires_at") @db.Timestamptz(3)
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  persona           BuyerPersona            @relation(fields: [personaId], references: [id], onDelete: Restrict)
+  personaSnapshot   PersonaSnapshot         @relation(fields: [personaSnapshotId], references: [id], onDelete: Restrict)
+  bases             LeadScoreBasis[]
+  evidenceLinks     LeadScoreEvidenceLink[]
+
+  @@unique([inputFingerprint, policyVersion])
+  @@index([personaId, assessedAt(sort: Desc)])
+  @@index([personaSnapshotId])
+  @@map("lead_score_assessments")
+}
+
+model LeadScoreBasis {
+  id           String              @id @default(uuid()) @db.Uuid
+  assessmentId String              @map("assessment_id") @db.Uuid
+  basisType    ScoreBasisType      @map("basis_type")
+  sourceId     String              @map("source_id") @db.Uuid
+  direction    ScoreBasisDirection
+  contribution Int
+  confidence   Int
+  reasonCode   String              @map("reason_code") @db.VarChar(120)
+  explanation  String              @db.VarChar(1000)
+  observedAt   DateTime?           @map("observed_at") @db.Timestamptz(3)
+  expiresAt    DateTime?           @map("expires_at") @db.Timestamptz(3)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  assessment   LeadScoreAssessment @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+
+  @@index([assessmentId])
+  @@index([basisType, sourceId])
+  @@map("lead_score_bases")
+}
+
+model LeadScoreEvidenceLink {
+  id           String              @id @default(uuid()) @db.Uuid
+  assessmentId String              @map("assessment_id") @db.Uuid
+  sourceType   ScoreBasisType      @map("source_type")
+  sourceId     String              @map("source_id") @db.Uuid
+  linkedAt     DateTime            @default(now()) @map("linked_at") @db.Timestamptz(3)
+  assessment   LeadScoreAssessment @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+
+  @@unique([assessmentId, sourceType, sourceId])
+  @@index([sourceType, sourceId])
+  @@map("lead_score_evidence_links")
 }

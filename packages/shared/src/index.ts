@@ -1,5 +1,6 @@
 export * from './config/env';
 export * from './domain/buyer-persona';
+export * from './domain/lead-scoring';
 export * from './errors/app-error';
 export * from './logger';
 export * from './repository';
@@ -7,5 +8,6 @@ export * from './repository/anchor.repository';
 export * from './repository/buyer-persona.repository';
 export * from './repository/content-signal.repository';
 export * from './repository/keyword.repository';
+export * from './repository/lead-scoring.repository';
 export * from './service';
 export * from './types/api';
