@@ -66,6 +66,38 @@ enum AnchorRiskLevel {
   HIGH
 }
 
+enum ContentSignalType {
+  DEMAND
+  PAIN_POINT
+  PREFERENCE
+  OBJECTION
+  INTENT
+}
+
+enum ContentSignalStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum SignalSourceType {
+  MANUAL
+  IMPORT
+  AUTHORIZED_API
+  SYSTEM
+}
+
+enum SignalEvidenceType {
+  TEXT
+  URL
+  METRIC
+  OBSERVATION
+}
+
+enum SignalEvidenceStatus {
+  AVAILABLE
+  REDACTED
+}
+
 model SystemConfig {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -136,6 +168,7 @@ model Keyword {
   roles            KeywordRoleLink[]
   variants         KeywordVariant[]
   tags             KeywordTagLink[]
+  contentSignals   ContentSignal[]
 
   @@index([categoryId])
   @@index([status])
@@ -218,6 +251,7 @@ model Anchor {
   archivedAt        DateTime?           @map("archived_at") @db.Timestamptz(3)
   platformAccount   PlatformAccount     @relation(fields: [platformAccountId], references: [id], onDelete: Restrict)
   observations      ObservationRecord[]
+  contentSignals    ContentSignal[]
 
   @@index([status])
   @@index([priority])
@@ -240,4 +274,47 @@ model ObservationRecord {
   @@index([anchorId, observedAt(sort: Desc)])
   @@index([source])
   @@map("observation_records")
+}
+
+model ContentSignal {
+  id                  String              @id @default(uuid()) @db.Uuid
+  anchorId            String              @map("anchor_id") @db.Uuid
+  keywordId           String?             @map("keyword_id") @db.Uuid
+  type                ContentSignalType
+  summary             String              @db.VarChar(1000)
+  normalizedSummary   String              @map("normalized_summary") @db.VarChar(1000)
+  sourceType          SignalSourceType    @map("source_type")
+  sourceReference     String?             @map("source_reference") @db.VarChar(2048)
+  sourceDescription   String?             @map("source_description") @db.VarChar(1000)
+  confidence          Int
+  confidenceRationale String              @map("confidence_rationale") @db.VarChar(1000)
+  occurredAt          DateTime?           @map("occurred_at") @db.Timestamptz(3)
+  observedAt          DateTime            @map("observed_at") @db.Timestamptz(3)
+  status              ContentSignalStatus @default(ACTIVE)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt          DateTime?           @map("archived_at") @db.Timestamptz(3)
+  anchor              Anchor              @relation(fields: [anchorId], references: [id], onDelete: Restrict)
+  keyword             Keyword?            @relation(fields: [keywordId], references: [id], onDelete: Restrict)
+  evidence            SignalEvidence[]
+
+  @@index([anchorId, type, normalizedSummary, occurredAt])
+  @@index([anchorId, status, observedAt(sort: Desc)])
+  @@index([keywordId])
+  @@map("content_signals")
+}
+
+model SignalEvidence {
+  id              String               @id @default(uuid()) @db.Uuid
+  contentSignalId String               @map("content_signal_id") @db.Uuid
+  type            SignalEvidenceType
+  status          SignalEvidenceStatus @default(AVAILABLE)
+  content         String               @db.VarChar(2000)
+  referenceUrl    String?              @map("reference_url") @db.VarChar(2048)
+  observedAt      DateTime             @map("observed_at") @db.Timestamptz(3)
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  contentSignal   ContentSignal        @relation(fields: [contentSignalId], references: [id], onDelete: Cascade)
+
+  @@index([contentSignalId, observedAt(sort: Desc)])
+  @@map("signal_evidence")
 }
