@@ -28,8 +28,15 @@ suite.sequential('PrismaBuyerPersonaRepository integration', () => {
       changeReason: 'Initial assessment',
     });
     const second = await repository.saveDimensionAssessment({
-      ...first,
+      buyerPersonaId: first.buyerPersonaId,
+      category: first.category,
+      dimensionKey: first.dimensionKey,
       normalizedValue: null,
+      cognitiveStatus: first.cognitiveStatus,
+      confidence: first.confidence,
+      rationale: first.rationale,
+      validFrom: first.validFrom,
+      validUntil: first.validUntil,
       assessedAt: new Date('2026-07-29T01:00:00.000Z'),
       version: 2,
       changeReason: 'Explicitly reconfirmed unknown',
