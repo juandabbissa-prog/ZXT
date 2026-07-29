@@ -51,19 +51,19 @@ Sales Agent capabilities.
 
 ## 4. Local verification
 
-| Check | Result |
-| --- | --- |
-| Dependency install | PASS |
-| Prisma generate | PASS |
-| Prisma validate | PASS |
-| Prettier | PASS |
-| ESLint | PASS |
-| Architecture check | PASS |
-| TypeScript typecheck | PASS |
-| Content Signal unit and route tests | PASS — 10/10 |
-| Production build | PASS |
-| Database integration tests | Deferred to GitHub Actions PostgreSQL service |
-| Docker smoke | Deferred to GitHub Actions Docker runner |
+| Check                               | Result                                        |
+| ----------------------------------- | --------------------------------------------- |
+| Dependency install                  | PASS                                          |
+| Prisma generate                     | PASS                                          |
+| Prisma validate                     | PASS                                          |
+| Prettier                            | PASS                                          |
+| ESLint                              | PASS                                          |
+| Architecture check                  | PASS                                          |
+| TypeScript typecheck                | PASS                                          |
+| Content Signal unit and route tests | PASS — 10/10                                  |
+| Production build                    | PASS                                          |
+| Database integration tests          | Deferred to GitHub Actions PostgreSQL service |
+| Docker smoke                        | Deferred to GitHub Actions Docker runner      |
 
 ## 5. Acceptance criteria
 
