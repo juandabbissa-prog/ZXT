@@ -58,8 +58,9 @@ async function main() {
         occurredAt: new Date('2026-07-29T00:00:00.000Z'),
       },
     });
-    if (!existingSignal) {
-      await prisma.contentSignal.create({
+    const signal =
+      existingSignal ??
+      (await prisma.contentSignal.create({
         data: {
           anchorId: anchor.id,
           keywordId: keyword.id,
@@ -81,8 +82,98 @@ async function main() {
             },
           },
         },
+      }));
+    const persona = await prisma.buyerPersona.upsert({
+      where: { subjectReference: 'seed-buyer-persona' },
+      update: {},
+      create: { subjectReference: 'seed-buyer-persona' },
+    });
+    const assessment = await prisma.personaDimensionAssessment.upsert({
+      where: {
+        buyerPersonaId_dimensionKey_version: {
+          buyerPersonaId: persona.id,
+          dimensionKey: 'acceptable_commute_minutes',
+          version: 1,
+        },
+      },
+      update: {},
+      create: {
+        buyerPersonaId: persona.id,
+        category: 'COMMUTE_RELATIONSHIP',
+        dimensionKey: 'acceptable_commute_minutes',
+        normalizedValue: { minimum: 20, maximum: 45, unit: 'minutes' },
+        cognitiveStatus: 'INFERENCE',
+        confidence: 80,
+        rationale: 'Seeded Content Signal explicitly references commute time.',
+        validFrom: new Date('2026-07-29T00:00:00.000Z'),
+        assessedAt: new Date('2026-07-29T00:02:00.000Z'),
+        version: 1,
+      },
+    });
+    const existingPersonaEvidence = await prisma.personaEvidenceLink.findFirst({
+      where: {
+        buyerPersonaId: persona.id,
+        assessmentId: assessment.id,
+        contentSignalId: signal.id,
+        signalEvidenceId: null,
+        relation: 'SUPPORTS',
+      },
+    });
+    if (!existingPersonaEvidence) {
+      await prisma.personaEvidenceLink.create({
+        data: {
+          buyerPersonaId: persona.id,
+          assessmentId: assessment.id,
+          contentSignalId: signal.id,
+          relation: 'SUPPORTS',
+          observedAt: signal.observedAt,
+          reason: 'Deterministic Buyer Persona development seed.',
+          confidenceSnapshot: signal.confidence,
+        },
       });
     }
+    const snapshot = await prisma.personaSnapshot.upsert({
+      where: {
+        buyerPersonaId_snapshotVersion: {
+          buyerPersonaId: persona.id,
+          snapshotVersion: 1,
+        },
+      },
+      update: {},
+      create: {
+        buyerPersonaId: persona.id,
+        snapshotVersion: 1,
+        personaVersion: persona.version,
+        dimensions: [
+          {
+            category: 'COMMUTE_RELATIONSHIP',
+            dimensionKey: 'acceptable_commute_minutes',
+            cognitiveStatus: 'INFERENCE',
+            confidence: 80,
+          },
+        ],
+        evidenceSummary: [{ contentSignalId: signal.id, relation: 'SUPPORTS' }],
+        missingDimensions: [
+          'BASIC_DEMOGRAPHICS',
+          'FAMILY_STRUCTURE',
+          'WORK_AREA',
+          'CURRENT_RESIDENTIAL_AREA',
+          'INTEREST_PREFERENCE',
+          'PROPERTY_PURCHASE_NEED',
+          'BUDGET_RANGE',
+          'PURCHASE_STAGE',
+          'INTENT_INDICATOR',
+        ],
+        reason: 'Deterministic Buyer Persona development seed.',
+      },
+    });
+    await prisma.buyerPersona.update({
+      where: { id: persona.id },
+      data: {
+        latestSnapshotId: snapshot.id,
+        lastAssessedAt: assessment.assessedAt,
+      },
+    });
   }
 }
 main()
