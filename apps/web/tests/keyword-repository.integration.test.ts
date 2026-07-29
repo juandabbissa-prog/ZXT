@@ -4,6 +4,7 @@ import { PrismaKeywordCategoryRepository } from '../src/features/keyword/keyword
 import { PrismaKeywordRepository } from '../src/features/keyword/keyword.repository.prisma';
 import { PrismaKeywordTagRepository } from '../src/features/keyword/keyword-tag.repository.prisma';
 import { runInTransaction } from '../src/infrastructure/persistence/transaction-runner';
+import { clearIntegrationData } from './helpers/clear-integration-data';
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION_TESTS === 'true';
 const suite = enabled ? describe : describe.skip;
@@ -18,14 +19,7 @@ suite('keyword repository integration', () => {
   const phrase = () => `keyword-${++serial}`;
 
   beforeAll(async () => {
-    await prisma.signalEvidence.deleteMany();
-    await prisma.contentSignal.deleteMany();
-    await prisma.keywordTagLink.deleteMany();
-    await prisma.keywordRoleLink.deleteMany();
-    await prisma.keywordVariant.deleteMany();
-    await prisma.keyword.deleteMany();
-    await prisma.keywordTag.deleteMany();
-    await prisma.keywordCategory.deleteMany();
+    await clearIntegrationData();
     categoryId = (
       await prisma.keywordCategory.create({
         data: { code: 'TEST_ROOT', name: 'Test Root', status: 'ACTIVE' },
@@ -38,16 +32,7 @@ suite('keyword repository integration', () => {
     ).id;
   });
 
-  afterAll(async () => {
-    await prisma.signalEvidence.deleteMany();
-    await prisma.contentSignal.deleteMany();
-    await prisma.keywordTagLink.deleteMany();
-    await prisma.keywordRoleLink.deleteMany();
-    await prisma.keywordVariant.deleteMany();
-    await prisma.keyword.deleteMany();
-    await prisma.keywordTag.deleteMany();
-    await prisma.keywordCategory.deleteMany();
-  });
+  afterAll(clearIntegrationData);
 
   async function createKeyword(
     overrides: Partial<{

@@ -98,6 +98,44 @@ enum SignalEvidenceStatus {
   REDACTED
 }
 
+enum BuyerPersonaStatus {
+  DRAFT
+  ACTIVE
+  STALE
+  ARCHIVED
+}
+
+enum PersonaDimensionCategory {
+  BASIC_DEMOGRAPHICS
+  FAMILY_STRUCTURE
+  WORK_AREA
+  COMMUTE_RELATIONSHIP
+  CURRENT_RESIDENTIAL_AREA
+  INTEREST_PREFERENCE
+  PROPERTY_PURCHASE_NEED
+  BUDGET_RANGE
+  PURCHASE_STAGE
+  INTENT_INDICATOR
+}
+
+enum PersonaCognitiveStatus {
+  FACT
+  INFERENCE
+  UNKNOWN
+}
+
+enum PersonaAssessmentStatus {
+  CURRENT
+  SUPERSEDED
+  EXPIRED
+}
+
+enum PersonaEvidenceRelation {
+  SUPPORTS
+  CONTRADICTS
+  CONTEXT_ONLY
+}
+
 model SystemConfig {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -277,26 +315,27 @@ model ObservationRecord {
 }
 
 model ContentSignal {
-  id                  String              @id @default(uuid()) @db.Uuid
-  anchorId            String              @map("anchor_id") @db.Uuid
-  keywordId           String?             @map("keyword_id") @db.Uuid
-  type                ContentSignalType
-  summary             String              @db.VarChar(1000)
-  normalizedSummary   String              @map("normalized_summary") @db.VarChar(1000)
-  sourceType          SignalSourceType    @map("source_type")
-  sourceReference     String?             @map("source_reference") @db.VarChar(2048)
-  sourceDescription   String?             @map("source_description") @db.VarChar(1000)
-  confidence          Int
-  confidenceRationale String              @map("confidence_rationale") @db.VarChar(1000)
-  occurredAt          DateTime?           @map("occurred_at") @db.Timestamptz(3)
-  observedAt          DateTime            @map("observed_at") @db.Timestamptz(3)
-  status              ContentSignalStatus @default(ACTIVE)
-  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
-  archivedAt          DateTime?           @map("archived_at") @db.Timestamptz(3)
-  anchor              Anchor              @relation(fields: [anchorId], references: [id], onDelete: Restrict)
-  keyword             Keyword?            @relation(fields: [keywordId], references: [id], onDelete: Restrict)
-  evidence            SignalEvidence[]
+  id                   String                @id @default(uuid()) @db.Uuid
+  anchorId             String                @map("anchor_id") @db.Uuid
+  keywordId            String?               @map("keyword_id") @db.Uuid
+  type                 ContentSignalType
+  summary              String                @db.VarChar(1000)
+  normalizedSummary    String                @map("normalized_summary") @db.VarChar(1000)
+  sourceType           SignalSourceType      @map("source_type")
+  sourceReference      String?               @map("source_reference") @db.VarChar(2048)
+  sourceDescription    String?               @map("source_description") @db.VarChar(1000)
+  confidence           Int
+  confidenceRationale  String                @map("confidence_rationale") @db.VarChar(1000)
+  occurredAt           DateTime?             @map("occurred_at") @db.Timestamptz(3)
+  observedAt           DateTime              @map("observed_at") @db.Timestamptz(3)
+  status               ContentSignalStatus   @default(ACTIVE)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt           DateTime?             @map("archived_at") @db.Timestamptz(3)
+  anchor               Anchor                @relation(fields: [anchorId], references: [id], onDelete: Restrict)
+  keyword              Keyword?              @relation(fields: [keywordId], references: [id], onDelete: Restrict)
+  evidence             SignalEvidence[]
+  personaEvidenceLinks PersonaEvidenceLink[]
 
   @@index([anchorId, type, normalizedSummary, occurredAt])
   @@index([anchorId, status, observedAt(sort: Desc)])
@@ -305,16 +344,107 @@ model ContentSignal {
 }
 
 model SignalEvidence {
-  id              String               @id @default(uuid()) @db.Uuid
-  contentSignalId String               @map("content_signal_id") @db.Uuid
-  type            SignalEvidenceType
-  status          SignalEvidenceStatus @default(AVAILABLE)
-  content         String               @db.VarChar(2000)
-  referenceUrl    String?              @map("reference_url") @db.VarChar(2048)
-  observedAt      DateTime             @map("observed_at") @db.Timestamptz(3)
-  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  contentSignal   ContentSignal        @relation(fields: [contentSignalId], references: [id], onDelete: Cascade)
+  id                   String                @id @default(uuid()) @db.Uuid
+  contentSignalId      String                @map("content_signal_id") @db.Uuid
+  type                 SignalEvidenceType
+  status               SignalEvidenceStatus  @default(AVAILABLE)
+  content              String                @db.VarChar(2000)
+  referenceUrl         String?               @map("reference_url") @db.VarChar(2048)
+  observedAt           DateTime              @map("observed_at") @db.Timestamptz(3)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  contentSignal        ContentSignal         @relation(fields: [contentSignalId], references: [id], onDelete: Cascade)
+  personaEvidenceLinks PersonaEvidenceLink[]
 
   @@index([contentSignalId, observedAt(sort: Desc)])
   @@map("signal_evidence")
+}
+
+model BuyerPersona {
+  id               String                       @id @default(uuid()) @db.Uuid
+  subjectReference String?                      @unique @map("subject_reference") @db.VarChar(160)
+  status           BuyerPersonaStatus           @default(DRAFT)
+  version          Int                          @default(1)
+  lastAssessedAt   DateTime?                    @map("last_assessed_at") @db.Timestamptz(3)
+  latestSnapshotId String?                      @unique @map("latest_snapshot_id") @db.Uuid
+  createdAt        DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt       DateTime?                    @map("archived_at") @db.Timestamptz(3)
+  assessments      PersonaDimensionAssessment[]
+  evidenceLinks    PersonaEvidenceLink[]
+  snapshots        PersonaSnapshot[]            @relation("PersonaSnapshots")
+  latestSnapshot   PersonaSnapshot?             @relation("LatestPersonaSnapshot", fields: [latestSnapshotId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([updatedAt(sort: Desc)])
+  @@map("buyer_personas")
+}
+
+model PersonaDimensionAssessment {
+  id              String                   @id @default(uuid()) @db.Uuid
+  buyerPersonaId  String                   @map("buyer_persona_id") @db.Uuid
+  category        PersonaDimensionCategory
+  dimensionKey    String                   @map("dimension_key") @db.VarChar(120)
+  normalizedValue Json?                    @map("normalized_value")
+  cognitiveStatus PersonaCognitiveStatus   @map("cognitive_status")
+  confidence      Int
+  rationale       String?                  @db.VarChar(1000)
+  validFrom       DateTime                 @map("valid_from") @db.Timestamptz(3)
+  validUntil      DateTime?                @map("valid_until") @db.Timestamptz(3)
+  assessedAt      DateTime                 @map("assessed_at") @db.Timestamptz(3)
+  status          PersonaAssessmentStatus  @default(CURRENT)
+  version         Int                      @default(1)
+  changeReason    String?                  @map("change_reason") @db.VarChar(500)
+  supersededAt    DateTime?                @map("superseded_at") @db.Timestamptz(3)
+  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  buyerPersona    BuyerPersona             @relation(fields: [buyerPersonaId], references: [id], onDelete: Restrict)
+  evidenceLinks   PersonaEvidenceLink[]
+
+  @@unique([buyerPersonaId, dimensionKey, version])
+  @@index([buyerPersonaId, status])
+  @@index([category])
+  @@map("persona_dimension_assessments")
+}
+
+model PersonaEvidenceLink {
+  id                 String                      @id @default(uuid()) @db.Uuid
+  buyerPersonaId     String                      @map("buyer_persona_id") @db.Uuid
+  assessmentId       String?                     @map("assessment_id") @db.Uuid
+  contentSignalId    String                      @map("content_signal_id") @db.Uuid
+  signalEvidenceId   String?                     @map("signal_evidence_id") @db.Uuid
+  relation           PersonaEvidenceRelation
+  observedAt         DateTime                    @map("observed_at") @db.Timestamptz(3)
+  linkedAt           DateTime                    @default(now()) @map("linked_at") @db.Timestamptz(3)
+  reason             String?                     @db.VarChar(1000)
+  confidenceSnapshot Int                         @map("confidence_snapshot")
+  validUntilSnapshot DateTime?                   @map("valid_until_snapshot") @db.Timestamptz(3)
+  buyerPersona       BuyerPersona                @relation(fields: [buyerPersonaId], references: [id], onDelete: Restrict)
+  assessment         PersonaDimensionAssessment? @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  contentSignal      ContentSignal               @relation(fields: [contentSignalId], references: [id], onDelete: Restrict)
+  signalEvidence     SignalEvidence?             @relation(fields: [signalEvidenceId], references: [id], onDelete: Restrict)
+
+  @@unique([buyerPersonaId, assessmentId, contentSignalId, signalEvidenceId, relation])
+  @@index([buyerPersonaId, linkedAt(sort: Desc)])
+  @@index([assessmentId])
+  @@index([contentSignalId])
+  @@index([signalEvidenceId])
+  @@map("persona_evidence_links")
+}
+
+model PersonaSnapshot {
+  id                String        @id @default(uuid()) @db.Uuid
+  buyerPersonaId    String        @map("buyer_persona_id") @db.Uuid
+  snapshotVersion   Int           @map("snapshot_version")
+  personaVersion    Int           @map("persona_version")
+  dimensions        Json
+  evidenceSummary   Json          @map("evidence_summary")
+  missingDimensions Json          @map("missing_dimensions")
+  generatedAt       DateTime      @default(now()) @map("generated_at") @db.Timestamptz(3)
+  validUntil        DateTime?     @map("valid_until") @db.Timestamptz(3)
+  reason            String?       @db.VarChar(500)
+  buyerPersona      BuyerPersona  @relation("PersonaSnapshots", fields: [buyerPersonaId], references: [id], onDelete: Restrict)
+  latestForPersona  BuyerPersona? @relation("LatestPersonaSnapshot")
+
+  @@unique([buyerPersonaId, snapshotVersion])
+  @@index([buyerPersonaId, generatedAt(sort: Desc)])
+  @@map("persona_snapshots")
 }
