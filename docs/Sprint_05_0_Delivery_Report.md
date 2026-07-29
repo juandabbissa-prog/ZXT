@@ -96,11 +96,24 @@ This Sprint does not implement or modify:
 
 ## 6. Verification status
 
-Before publication:
+Implementation acceptance evidence:
 
-- scope review: completed
-- `git diff --check`: passed
-- full runtime verification: pending GitHub Actions
+- validated implementation commit:
+  `3ee5dbe0a61a276f27416de2c4474c3d18dc163d`
+- GitHub Actions Run:
+  `https://github.com/juandabbissa-prog/ZXT/actions/runs/30429229980`
+- `verify`: passed
+- Prisma generate, format, validate, migration, and seed: passed
+- format, lint, architecture, and type checks: passed
+- domain, service, route, and database integration tests: passed
+- production build: passed
+- `container-smoke`: passed
+- Docker health checks and evidence artifact upload: passed
 
-The final commit SHA, Actions Run URL, job conclusions, and packaged CI evidence are
-recorded after the remote CI run completes.
+The report-only commit that records this evidence does not modify runtime behavior.
+Its final GitHub Actions result and packaged evidence are supplied with the delivery.
+
+## 7. Delivery status
+
+Sprint 5.0 implementation is ready for review. It is not frozen and no Sprint 6.0
+work has started.
