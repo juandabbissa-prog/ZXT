@@ -1,25 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@re-agent/database';
 import { PrismaBuyerPersonaRepository } from '../src/features/buyer-persona/buyer-persona.repository.prisma';
+import { clearIntegrationData } from './helpers/clear-integration-data';
 
 const suite = process.env.RUN_DATABASE_INTEGRATION_TESTS === 'true' ? describe : describe.skip;
 
 suite.sequential('PrismaBuyerPersonaRepository integration', () => {
   const repository = new PrismaBuyerPersonaRepository(prisma);
 
-  beforeAll(async () => {
-    await prisma.personaEvidenceLink.deleteMany();
-    await prisma.personaDimensionAssessment.deleteMany();
-    await prisma.personaSnapshot.deleteMany();
-    await prisma.buyerPersona.deleteMany();
-  });
-
-  afterAll(async () => {
-    await prisma.personaEvidenceLink.deleteMany();
-    await prisma.personaDimensionAssessment.deleteMany();
-    await prisma.personaSnapshot.deleteMany();
-    await prisma.buyerPersona.deleteMany();
-  });
+  beforeAll(clearIntegrationData);
+  afterAll(clearIntegrationData);
 
   it('persists a persona and preserves assessment history', async () => {
     const persona = await repository.createPersona({ subjectReference: 'buyer-001' });

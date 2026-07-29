@@ -5,6 +5,7 @@ import { AnchorService, type AnchorTransactionRunner } from '../src/features/anc
 import { PrismaObservationRecordRepository } from '../src/features/anchor/observation-record.repository.prisma';
 import { PrismaPlatformAccountRepository } from '../src/features/anchor/platform-account.repository.prisma';
 import { runInTransaction } from '../src/infrastructure/persistence/transaction-runner';
+import { clearIntegrationData } from './helpers/clear-integration-data';
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION_TESTS === 'true';
 const suite = enabled ? describe : describe.skip;
@@ -18,17 +19,8 @@ suite('AnchorService integration', () => {
   };
   const service = new AnchorService(platformAccounts, anchors, observations, transactions);
 
-  beforeAll(async () => {
-    await prisma.observationRecord.deleteMany();
-    await prisma.anchor.deleteMany();
-    await prisma.platformAccount.deleteMany();
-  });
-
-  afterAll(async () => {
-    await prisma.observationRecord.deleteMany();
-    await prisma.anchor.deleteMany();
-    await prisma.platformAccount.deleteMany();
-  });
+  beforeAll(clearIntegrationData);
+  afterAll(clearIntegrationData);
 
   it('persists Platform Account, Anchor and Observation Record through Service and Repository', async () => {
     const account = await service.createPlatformAccount({

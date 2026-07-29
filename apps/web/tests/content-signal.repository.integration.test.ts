@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@re-agent/database';
 import { PrismaContentSignalRepository } from '../src/features/content-signal/content-signal.repository.prisma';
 import { runInTransaction } from '../src/infrastructure/persistence/transaction-runner';
+import { clearIntegrationData } from './helpers/clear-integration-data';
 
 const suite = process.env.RUN_DATABASE_INTEGRATION_TESTS === 'true' ? describe : describe.skip;
 
@@ -11,16 +12,7 @@ suite('PrismaContentSignalRepository integration', () => {
   let keywordId: string;
 
   beforeAll(async () => {
-    await prisma.signalEvidence.deleteMany();
-    await prisma.contentSignal.deleteMany();
-    await prisma.observationRecord.deleteMany();
-    await prisma.anchor.deleteMany();
-    await prisma.platformAccount.deleteMany();
-    await prisma.keywordRoleLink.deleteMany();
-    await prisma.keywordVariant.deleteMany();
-    await prisma.keywordTagLink.deleteMany();
-    await prisma.keyword.deleteMany();
-    await prisma.keywordCategory.deleteMany();
+    await clearIntegrationData();
 
     const category = await prisma.keywordCategory.create({
       data: { code: 'CONTENT_SIGNAL_TEST', name: 'Content Signal Test' },
@@ -54,18 +46,7 @@ suite('PrismaContentSignalRepository integration', () => {
     anchorId = anchor.id;
   });
 
-  afterAll(async () => {
-    await prisma.signalEvidence.deleteMany();
-    await prisma.contentSignal.deleteMany();
-    await prisma.observationRecord.deleteMany();
-    await prisma.anchor.deleteMany();
-    await prisma.platformAccount.deleteMany();
-    await prisma.keywordRoleLink.deleteMany();
-    await prisma.keywordVariant.deleteMany();
-    await prisma.keywordTagLink.deleteMany();
-    await prisma.keyword.deleteMany();
-    await prisma.keywordCategory.deleteMany();
-  });
+  afterAll(clearIntegrationData);
 
   it('persists, filters and archives a platform-neutral signal with evidence', async () => {
     const occurredAt = new Date('2026-07-29T05:00:00.000Z');

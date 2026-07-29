@@ -37,7 +37,16 @@ describe('BuyerPersonaService', () => {
     { run: async (operation) => operation({} as never) },
   );
 
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.resetAllMocks();
+    repositories.personas.findAssessmentHistory.mockResolvedValue([]);
+    repositories.personas.findLatestValidSnapshot.mockResolvedValue(null);
+    repositories.personas.createSnapshot.mockImplementation(async (input) => ({
+      ...input,
+      id: 'snapshot-1',
+      generatedAt: new Date(),
+    }));
+  });
 
   it('creates a platform-neutral draft and rejects duplicate subject references', async () => {
     repositories.personas.findPersonaBySubjectReference.mockResolvedValueOnce(null);
@@ -139,18 +148,6 @@ describe('BuyerPersonaService', () => {
     repositories.personas.findPersonaById.mockResolvedValue(persona);
     repositories.personas.findCurrentAssessments.mockResolvedValue([]);
     repositories.personas.findEvidenceLinks.mockResolvedValue([]);
-    repositories.personas.createSnapshot.mockResolvedValue({
-      id: 'snapshot-1',
-      buyerPersonaId: 'persona-1',
-      snapshotVersion: 1,
-      personaVersion: 1,
-      dimensions: {},
-      evidenceSummary: [],
-      missingDimensions: [],
-      generatedAt: new Date(),
-      validUntil: null,
-      reason: 'Manual review baseline.',
-    });
     const snapshot = await service.generateSnapshot('persona-1', {
       reason: 'Manual review baseline.',
       validUntil: null,
