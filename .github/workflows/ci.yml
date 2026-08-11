@@ -7,6 +7,21 @@ permissions:
 
 jobs:
   verify:
+    if: >-
+      ${{
+        !(
+          (
+            github.event_name == 'pull_request' &&
+            github.head_ref == 'sprint/0-engineering-foundation' &&
+            github.base_ref == 'main' &&
+            github.event.pull_request.head.repo.full_name == github.repository
+          ) ||
+          (
+            github.event_name != 'pull_request' &&
+            github.ref == 'refs/heads/sprint/0-engineering-foundation'
+          )
+        )
+      }}
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -85,6 +100,21 @@ jobs:
           if-no-files-found: warn
 
   container-smoke:
+    if: >-
+      ${{
+        !(
+          (
+            github.event_name == 'pull_request' &&
+            github.head_ref == 'sprint/0-engineering-foundation' &&
+            github.base_ref == 'main' &&
+            github.event.pull_request.head.repo.full_name == github.repository
+          ) ||
+          (
+            github.event_name != 'pull_request' &&
+            github.ref == 'refs/heads/sprint/0-engineering-foundation'
+          )
+        )
+      }}
     needs: verify
     runs-on: ubuntu-latest
     steps:

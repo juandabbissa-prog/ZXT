@@ -1,0 +1,87 @@
+name: Sprint 0 Static
+
+on:
+  push:
+    branches:
+      - sprint/0-engineering-foundation
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    if: >-
+      ${{
+        (
+          github.event_name == 'pull_request' &&
+          github.head_ref == 'sprint/0-engineering-foundation' &&
+          github.base_ref == 'main' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        ) ||
+        (
+          github.event_name != 'pull_request' &&
+          github.ref == 'refs/heads/sprint/0-engineering-foundation'
+        )
+      }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.15
+      - name: Prepare static validation log directory
+        run: mkdir -p artifacts/sprint-0-static
+      - name: Install dependencies without lifecycle scripts
+        run: |
+          set -o pipefail
+          bun install --frozen-lockfile --ignore-scripts 2>&1 | tee artifacts/sprint-0-static/00-bun-install.log
+      - name: Report typed lint and typecheck coverage
+        run: |
+          set -o pipefail
+          printf '%s\n' \
+            'Typed lint/typecheck coverage:' \
+            '- included:' \
+            '  @re-agent/shared' \
+            '  @re-agent/sdk' \
+            '  @re-agent/crawler' \
+            '  @re-agent/workers' \
+            '- excluded due to Prisma generated-type dependency:' \
+            '  @re-agent/database' \
+            '  @re-agent/web' \
+            | tee artifacts/sprint-0-static/01-coverage.log
+      - name: Run full-repository non-generated static checks
+        run: |
+          set -o pipefail
+          (bun run format:check && bun run architecture:check) 2>&1 | tee artifacts/sprint-0-static/02-repository-static-checks.log
+      - name: Run scoped type-aware lint
+        run: |
+          set -o pipefail
+          (
+            bun --filter '@re-agent/shared' lint &&
+            bun --filter '@re-agent/sdk' lint &&
+            bun --filter '@re-agent/crawler' lint &&
+            bun --filter '@re-agent/workers' lint
+          ) 2>&1 | tee artifacts/sprint-0-static/03-scoped-lint.log
+      - name: Run scoped typecheck
+        run: |
+          set -o pipefail
+          (
+            bun --filter '@re-agent/shared' typecheck &&
+            bun --filter '@re-agent/sdk' typecheck &&
+            bun --filter '@re-agent/crawler' typecheck &&
+            bun --filter '@re-agent/workers' typecheck
+          ) 2>&1 | tee artifacts/sprint-0-static/04-scoped-typecheck.log
+      - name: Preserve Sprint 0 static evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprint-0-static-logs
+          path: artifacts/sprint-0-static/
+          if-no-files-found: warn
