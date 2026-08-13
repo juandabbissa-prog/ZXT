@@ -27,7 +27,8 @@
     "docker:reset-db": "docker compose down --volumes --remove-orphans && docker compose up --build -d",
     "docker:test": "docker compose run --rm web bun run test",
     "feature:create": "bun run scripts/create-feature.ts",
-    "architecture:check": "bun run scripts/check-service-repository-architecture.ts"
+    "architecture:check": "bun run scripts/check-service-repository-architecture.ts",
+    "replan-s0:static": "bun run scripts/replan-s0-static.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
