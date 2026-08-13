@@ -42,6 +42,8 @@ jobs:
         run: |
           set -o pipefail
           bun install --frozen-lockfile --ignore-scripts 2>&1 | tee artifacts/sprint-0-static/00-bun-install.log
+      - name: Run REPLAN-S0 non-side-effect gates
+        run: bun run replan-s0:static
       - name: Report typed lint and typecheck coverage
         run: |
           set -o pipefail
@@ -83,5 +85,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sprint-0-static-logs
-          path: artifacts/sprint-0-static/
+          path: |
+            artifacts/sprint-0-static/
+            artifacts/replan-s0/
           if-no-files-found: warn

@@ -1,0 +1,25 @@
+const root = import.meta.dir + '/../..';
+const required = [
+  'docker-compose.yml',
+  '.dockerignore',
+  'docker/web.Dockerfile',
+  'docker/crawler.Dockerfile',
+];
+for (const path of required)
+  if (!(await Bun.file(`${root}/${path}`).exists())) throw new Error(`${path} missing`);
+const compose = await Bun.file(`${root}/docker-compose.yml`).text();
+if (
+  !compose.includes('services:') ||
+  !compose.includes('docker/web.Dockerfile') ||
+  !compose.includes('docker/crawler.Dockerfile')
+)
+  throw new Error('Compose references incomplete');
+const ignore = await Bun.file(`${root}/.dockerignore`).text();
+for (const item of ['.git', 'artifacts', '.env', '.env.local', 'node_modules'])
+  if (!ignore.split(/\r?\n/).includes(item) && !ignore.includes(`**/${item}`))
+    throw new Error(`dockerignore missing ${item}`);
+const web = await Bun.file(`${root}/docker/web.Dockerfile`).text();
+const known = web.includes('prisma:generate');
+process.stdout.write(
+  `DOCKER_CONFIGURATION_STATIC_AUDIT_PASS docker-cli=NOT_INVOKED prisma-generate-build-boundary=${known ? 'KNOWN_PROHIBITED_EXECUTION' : 'ABSENT'}\n`,
+);
