@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "adapterId": "manual-fixture",
+  "adapterVersion": "1.0.0",
+  "dataSourceId": "source-fixture-001",
+  "sourceType": "FIXTURE",
+  "sourceRecordId": "record-fixture-001",
+  "businessSpaceId": "business-test-001",
+  "purposeCode": "test-evidence",
+  "evidenceType": "TEXT",
+  "content": "Synthetic fixture evidence.",
+  "acquiredAt": "2026-01-02T01:00:00.000Z",
+  "observedAt": "2026-01-02T00:00:00.000Z",
+  "occurredAt": "2026-01-01T23:00:00.000Z",
+  "provenance": {
+    "acquisitionMethod": "FIXTURE",
+    "sourceReference": null,
+    "complianceDeclarationVersion": "1.0.0"
+  },
+  "unknownFields": [],
+  "referenceUrl": "https://fixture.test/evidence/001",
+  "contentLanguage": "en",
+  "sourceMetadata": {
+    "fixture": "true"
+  }
+}
