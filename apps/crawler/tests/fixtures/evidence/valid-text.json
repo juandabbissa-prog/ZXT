@@ -1,0 +1,74 @@
+{
+  "cases": [
+    {
+      "name": "fixture",
+      "dataSource": {
+        "contractVersion": "1.0.0",
+        "dataSourceId": "source-fixture-001",
+        "sourceType": "FIXTURE",
+        "governanceStatus": "ACTIVE",
+        "allowedPurposeCodes": ["test-evidence"],
+        "businessSpaceId": "business-test-001",
+        "complianceDeclarationVersion": "1.0.0"
+      },
+      "sourcePayload": {
+        "contractVersion": "1.0.0",
+        "dataSourceId": "source-fixture-001",
+        "sourceType": "FIXTURE",
+        "businessSpaceId": "business-test-001",
+        "purposeCode": "test-evidence",
+        "sourceRecordId": "record-fixture-001",
+        "acquisitionMethod": "FIXTURE",
+        "acquiredAt": "2026-01-01T00:00:00.000Z",
+        "observedAt": "2026-01-01T00:00:00.000Z",
+        "occurredAt": null,
+        "sourceReference": null,
+        "payload": {
+          "evidenceType": "TEXT",
+          "content": "Synthetic fixture evidence.",
+          "unknownFields": [],
+          "referenceUrl": "https://fixture.test/evidence/001",
+          "contentLanguage": "en",
+          "sourceMetadata": {
+            "fixture": "true"
+          }
+        }
+      }
+    },
+    {
+      "name": "manual-import",
+      "dataSource": {
+        "contractVersion": "1.0.0",
+        "dataSourceId": "source-manual-001",
+        "sourceType": "MANUAL_IMPORT",
+        "governanceStatus": "ACTIVE",
+        "allowedPurposeCodes": ["test-evidence"],
+        "businessSpaceId": "business-test-001",
+        "complianceDeclarationVersion": "1.0.0"
+      },
+      "sourcePayload": {
+        "contractVersion": "1.0.0",
+        "dataSourceId": "source-manual-001",
+        "sourceType": "MANUAL_IMPORT",
+        "businessSpaceId": "business-test-001",
+        "purposeCode": "test-evidence",
+        "sourceRecordId": "record-manual-001",
+        "acquisitionMethod": "MANUAL",
+        "acquiredAt": "2026-01-02T00:00:00.000Z",
+        "observedAt": "2026-01-02T00:00:00.000Z",
+        "occurredAt": "2026-01-01T23:00:00.000Z",
+        "sourceReference": "manual-record-001",
+        "payload": {
+          "evidenceType": "TEXT",
+          "content": "Synthetic manually imported evidence.",
+          "unknownFields": ["legacyLabel"],
+          "referenceUrl": null,
+          "contentLanguage": "en",
+          "sourceMetadata": {
+            "origin": "manual-test"
+          }
+        }
+      }
+    }
+  ]
+}
