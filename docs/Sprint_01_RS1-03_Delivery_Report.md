@@ -37,13 +37,13 @@ PR #9 实际新增以下 7 个文件：
 
 ## 4. 测试结果
 
-| 检查项 | 结果 |
-| --- | --- |
-| Adapter tests | PASS |
-| crawler lint | PASS |
-| crawler typecheck | PASS |
+| 检查项             | 结果 |
+| ------------------ | ---- |
+| Adapter tests      | PASS |
+| crawler lint       | PASS |
+| crawler typecheck  | PASS |
 | architecture check | PASS |
-| Prettier | PASS |
+| Prettier           | PASS |
 | `git diff --check` | PASS |
 
 ## 5. 架构边界验证
