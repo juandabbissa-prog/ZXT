@@ -2,6 +2,7 @@ export * from './config/env';
 export * from './domain/buyer-persona';
 export * from './domain/lead-scoring';
 export * from './errors/app-error';
+export * from './evidence-intake';
 export * from './logger';
 export * from './repository';
 export * from './repository/anchor.repository';
