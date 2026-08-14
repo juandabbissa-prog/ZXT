@@ -13,3 +13,4 @@ export * from './repository/keyword.repository';
 export * from './repository/lead-scoring.repository';
 export * from './service';
 export * from './types/api';
+export * from './understanding-context';
