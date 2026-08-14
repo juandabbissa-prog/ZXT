@@ -1,0 +1,31 @@
+{
+  "dataSource": {
+    "contractVersion": "1.0.0",
+    "dataSourceId": "source-fixture-malformed",
+    "sourceType": "FIXTURE",
+    "governanceStatus": "ACTIVE",
+    "allowedPurposeCodes": ["test-evidence"],
+    "businessSpaceId": "business-test-001",
+    "complianceDeclarationVersion": "1.0.0"
+  },
+  "sourcePayload": {
+    "contractVersion": "1.0.0",
+    "dataSourceId": "source-fixture-malformed",
+    "sourceType": "FIXTURE",
+    "businessSpaceId": "business-test-001",
+    "purposeCode": "test-evidence",
+    "sourceRecordId": "record-malformed-001",
+    "acquisitionMethod": "FIXTURE",
+    "acquiredAt": "2026-01-03T00:00:00.000Z",
+    "observedAt": "2026-01-03T00:00:00.000Z",
+    "occurredAt": null,
+    "sourceReference": null,
+    "payload": {
+      "evidenceType": "TEXT",
+      "unknownFields": [],
+      "referenceUrl": null,
+      "contentLanguage": "en",
+      "sourceMetadata": {}
+    }
+  }
+}

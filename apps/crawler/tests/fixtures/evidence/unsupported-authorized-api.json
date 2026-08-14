@@ -1,0 +1,32 @@
+{
+  "dataSource": {
+    "contractVersion": "1.0.0",
+    "dataSourceId": "source-api-unsupported",
+    "sourceType": "AUTHORIZED_API",
+    "governanceStatus": "ACTIVE",
+    "allowedPurposeCodes": ["test-evidence"],
+    "businessSpaceId": "business-test-001",
+    "complianceDeclarationVersion": "1.0.0"
+  },
+  "sourcePayload": {
+    "contractVersion": "1.0.0",
+    "dataSourceId": "source-api-unsupported",
+    "sourceType": "AUTHORIZED_API",
+    "businessSpaceId": "business-test-001",
+    "purposeCode": "test-evidence",
+    "sourceRecordId": "record-api-001",
+    "acquisitionMethod": "AUTHORIZED_API",
+    "acquiredAt": "2026-01-04T00:00:00.000Z",
+    "observedAt": "2026-01-04T00:00:00.000Z",
+    "occurredAt": null,
+    "sourceReference": "api-record-001",
+    "payload": {
+      "evidenceType": "TEXT",
+      "content": "This fixture must never trigger a network request.",
+      "unknownFields": [],
+      "referenceUrl": "https://api.test/evidence/001",
+      "contentLanguage": "en",
+      "sourceMetadata": {}
+    }
+  }
+}
