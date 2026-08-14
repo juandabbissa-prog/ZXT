@@ -1,0 +1,9 @@
+{
+  "policyVersion": "1.0.0",
+  "maxAgeByEvidenceType": {
+    "TEXT": 86400000
+  },
+  "maxFutureClockSkew": 300000,
+  "missingOccurredAtBasis": "OBSERVED_AT",
+  "unknownFreshnessBehavior": "INELIGIBLE"
+}

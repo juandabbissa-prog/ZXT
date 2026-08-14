@@ -1,0 +1,9 @@
+{
+  "contractVersion": "1.0.0",
+  "dataSourceId": "source-fixture-001",
+  "sourceType": "FIXTURE",
+  "governanceStatus": "ACTIVE",
+  "allowedPurposeCodes": ["test-evidence"],
+  "businessSpaceId": "business-test-001",
+  "complianceDeclarationVersion": "1.0.0"
+}
