@@ -295,6 +295,12 @@ describe('deterministic real-estate intent matcher', () => {
     '这个楼盘介绍视频能看看吗？',
     '这个小区的文章还有吗？',
     '这个小区的资料还有吗？',
+    '房价还有吗？',
+    '房贷资料发一下',
+    '房租还有吗？',
+    '房产新闻还有吗？',
+    '房产政策发一下',
+    '房产视频还有吗？',
   ])('does not treat a content asset request as HIGH_INTENT_ACTION: %s', (text) => {
     const result = run(text);
     if (result.status !== 'MATCHED') {
@@ -313,12 +319,39 @@ describe('deterministic real-estate intent matcher', () => {
     '看完视频后想预约看房',
     '这个介绍视频看完了，我想看看还有没有房',
     '这套房还有吗？',
+    '房源发一下',
   ])('requires an explicit property action object: %s', (text) => {
     const result = run(text);
     expect(result.status).toBe('MATCHED');
     if (result.status !== 'MATCHED') return;
     expect(result.context.matches.map((match) => match.intent)).toContain('HIGH_INTENT_ACTION');
   });
+
+  test.each([
+    '视频还有吗，这套房还有吗',
+    '视频发一下，房源发一下',
+    '这套房还有吗，视频还有吗',
+    '房源发一下，链接发一下',
+  ])('preserves a property action across repeated action phrases: %s', (text) => {
+    const result = run(text);
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    expect(result.context.matches.map((match) => match.intent)).toContain('HIGH_INTENT_ACTION');
+  });
+
+  test.each(['视频还有吗，链接还有吗', '视频发一下，文章发一下'])(
+    'does not invent a property action across repeated content requests: %s',
+    (text) => {
+      const result = run(text);
+      if (result.status !== 'MATCHED') {
+        expect(result.status).toBe('NO_MATCH');
+        return;
+      }
+      expect(result.context.matches.map((match) => match.intent)).not.toContain(
+        'HIGH_INTENT_ACTION',
+      );
+    },
+  );
 
   test.each(['房价', '房价吗？', '买房？', '首付？', '贷款？'])(
     'keeps an isolated weak term safe: %s',

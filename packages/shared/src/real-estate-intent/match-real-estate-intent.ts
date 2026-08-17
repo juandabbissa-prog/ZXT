@@ -40,6 +40,24 @@ type ActionTargetDecision = Readonly<{
   targetStart: number | null;
 }>;
 
+type TextOccurrence = Readonly<{
+  phrase: string;
+  start: number;
+  end: number;
+}>;
+
+const explicitRoomPrefixes = ['这套', '那套', '这个', '那个', '还有', '有没有', '有'] as const;
+
+const findAllOccurrences = (value: string, phrase: string): readonly TextOccurrence[] => {
+  const occurrences: TextOccurrence[] = [];
+  let start = value.indexOf(phrase);
+  while (start >= 0) {
+    occurrences.push({ phrase, start, end: start + phrase.length });
+    start = value.indexOf(phrase, start + phrase.length);
+  }
+  return occurrences;
+};
+
 const spanDistance = (
   actionStart: number,
   actionLength: number,
@@ -54,48 +72,47 @@ const spanDistance = (
 };
 
 const isPropertyObjectOccurrence = (value: string, phrase: string, start: number): boolean =>
-  phrase !== '房' || !['价', '贷'].includes(value[start + phrase.length] ?? '');
+  phrase !== '房' || explicitRoomPrefixes.some((prefix) => value.slice(0, start).endsWith(prefix));
 
 const findObjectOccurrences = (
   value: string,
   phrases: readonly string[],
   category: 'PROPERTY_ACTION' | 'CONTENT_ASSET_ACTION',
 ): ReadonlyArray<Readonly<{ category: typeof category; phrase: string; start: number }>> =>
-  phrases.flatMap((phrase) => {
-    const occurrences: Array<
-      Readonly<{ category: typeof category; phrase: string; start: number }>
-    > = [];
-    let start = value.indexOf(phrase);
-    while (start >= 0) {
-      if (category !== 'PROPERTY_ACTION' || isPropertyObjectOccurrence(value, phrase, start)) {
-        occurrences.push({ category, phrase, start });
-      }
-      start = value.indexOf(phrase, start + phrase.length);
-    }
-    return occurrences;
-  });
+  phrases.flatMap((phrase) =>
+    findAllOccurrences(value, phrase)
+      .filter(
+        (occurrence) =>
+          category !== 'PROPERTY_ACTION' ||
+          isPropertyObjectOccurrence(value, phrase, occurrence.start),
+      )
+      .map((occurrence) => ({ category, phrase, start: occurrence.start })),
+  );
 
-const classifyActionTarget = (clause: string, actionPhrase: string): ActionTargetDecision => {
-  const actionStart = clause.indexOf(actionPhrase);
-  const directPropertyTarget = propertyActionObjects.find((object) => {
-    const start = actionPhrase.indexOf(object);
-    return start >= 0 && isPropertyObjectOccurrence(actionPhrase, object, start);
-  });
-  const directContentTarget = contentAssetObjects.find((object) => actionPhrase.includes(object));
+const classifyActionTarget = (
+  clause: string,
+  actionOccurrence: TextOccurrence,
+): ActionTargetDecision => {
+  const { phrase: actionPhrase, start: actionStart, end: actionEnd } = actionOccurrence;
+  const propertyTargets = findObjectOccurrences(clause, propertyActionObjects, 'PROPERTY_ACTION');
+  const contentTargets = findObjectOccurrences(clause, contentAssetObjects, 'CONTENT_ASSET_ACTION');
+  const directPropertyTarget = propertyTargets.find(
+    (target) => target.start >= actionStart && target.start + target.phrase.length <= actionEnd,
+  );
+  const directContentTarget = contentTargets.find(
+    (target) => target.start >= actionStart && target.start + target.phrase.length <= actionEnd,
+  );
   if (directPropertyTarget && !directContentTarget) {
     return {
       actionPhrase,
       actionStart,
       targetCategory: 'PROPERTY_ACTION',
-      targetPhrase: directPropertyTarget,
-      targetStart: actionStart + actionPhrase.indexOf(directPropertyTarget),
+      targetPhrase: directPropertyTarget.phrase,
+      targetStart: directPropertyTarget.start,
     };
   }
 
-  const targets = [
-    ...findObjectOccurrences(clause, propertyActionObjects, 'PROPERTY_ACTION'),
-    ...findObjectOccurrences(clause, contentAssetObjects, 'CONTENT_ASSET_ACTION'),
-  ].sort((left, right) => {
+  const targets = [...propertyTargets, ...contentTargets].sort((left, right) => {
     const distance =
       spanDistance(actionStart, actionPhrase.length, left.start, left.phrase.length) -
       spanDistance(actionStart, actionPhrase.length, right.start, right.phrase.length);
@@ -166,9 +183,12 @@ export const matchRealEstateIntent = (input: unknown): RealEstateIntentMatchResu
     const clauseEntries = entries.filter((entry) => clause.includes(entry.normalizedText));
     const eligibleEntries = clauseEntries.filter((entry) => {
       if (entry.intent !== 'HIGH_INTENT_ACTION') return true;
-      const target = classifyActionTarget(clause, entry.normalizedText);
       return (
-        entry.evidenceStrength === 'EXPLICIT_ACTION' && target.targetCategory === 'PROPERTY_ACTION'
+        entry.evidenceStrength === 'EXPLICIT_ACTION' &&
+        findAllOccurrences(clause, entry.normalizedText).some(
+          (occurrence) =>
+            classifyActionTarget(clause, occurrence).targetCategory === 'PROPERTY_ACTION',
+        )
       );
     });
     const hasStrongerEntry = eligibleEntries.some(
