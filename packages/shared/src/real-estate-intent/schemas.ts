@@ -14,6 +14,7 @@ import {
 } from './contracts';
 
 const identifierSchema = z.string().trim().min(1).max(160);
+const semanticVersionSchema = z.string().regex(/^\d+\.\d+\.\d+$/u);
 const normalizedTextSchema = z
   .string()
   .min(1)
@@ -42,12 +43,12 @@ export const intentDictionaryEntrySchema = z
 
 export const intentDictionarySchema = z
   .object({
-    dictionaryVersion: z.string().regex(/^\d+\.\d+\.\d+$/u),
+    dictionaryVersion: semanticVersionSchema,
     locale: z.string().trim().min(2).max(35),
     market: identifierSchema,
-    normalizationVersion: z.literal(INTENT_NORMALIZATION_VERSION),
-    matchingRuleVersion: z.literal(INTENT_MATCHING_RULE_VERSION),
-    conflictPolicyVersion: z.literal(INTENT_CONFLICT_POLICY_VERSION),
+    normalizationVersion: semanticVersionSchema.default(INTENT_NORMALIZATION_VERSION),
+    matchingRuleVersion: semanticVersionSchema.default(INTENT_MATCHING_RULE_VERSION),
+    conflictPolicyVersion: semanticVersionSchema.default(INTENT_CONFLICT_POLICY_VERSION),
     entries: z.array(intentDictionaryEntrySchema).readonly(),
   })
   .strict()
@@ -72,8 +73,8 @@ export const modifierRuleSchema = z
 
 export const modifierRuleSetSchema = z
   .object({
-    modifierRuleVersion: z.string().regex(/^\d+\.\d+\.\d+$/u),
-    conflictPolicyVersion: z.literal(INTENT_CONFLICT_POLICY_VERSION),
+    modifierRuleVersion: semanticVersionSchema,
+    conflictPolicyVersion: semanticVersionSchema.default(INTENT_CONFLICT_POLICY_VERSION),
     scope: z.literal('CLAUSE'),
     rules: z.array(modifierRuleSchema).readonly(),
   })
@@ -91,7 +92,18 @@ export const modifierRuleSetSchema = z
 export const realEstateIntentMatchInputSchema = z
   .object({
     evidence: evidenceEnvelopeSchema,
-    signals: z.array(evidenceSignalSchema).readonly(),
+    signals: z
+      .array(evidenceSignalSchema)
+      .superRefine((signals, context) => {
+        const ids = new Set<string>();
+        for (const signal of signals) {
+          if (ids.has(signal.signalId)) {
+            context.addIssue({ code: 'custom', message: 'Duplicate signalId' });
+          }
+          ids.add(signal.signalId);
+        }
+      })
+      .readonly(),
     dictionary: intentDictionarySchema,
     modifierRuleSet: modifierRuleSetSchema,
   })
@@ -101,6 +113,7 @@ export const realEstateIntentMatchInputSchema = z
 export const intentMatchSchema = z
   .object({
     intent: z.enum(REAL_ESTATE_INTENTS),
+    clauseIndex: z.number().int().nonnegative(),
     stage: z.enum(INTENT_STAGES),
     modifiers: z.array(z.enum(INTENT_MODIFIERS)).readonly(),
     matchedRuleIds: z.array(identifierSchema).min(1).readonly(),
@@ -109,8 +122,9 @@ export const intentMatchSchema = z
       .min(1)
       .readonly(),
     signalIds: z.array(z.string().regex(/^sig1_[a-f0-9]{64}$/u)).readonly(),
-    dictionaryVersion: z.string().regex(/^\d+\.\d+\.\d+$/u),
-    ruleVersion: z.string().regex(/^\d+\.\d+\.\d+$/u),
+    dictionaryVersion: semanticVersionSchema,
+    matchingRuleVersion: semanticVersionSchema,
+    modifierRuleVersion: semanticVersionSchema,
   })
   .strict()
   .readonly();
@@ -120,8 +134,12 @@ export const intentContextSchema = z
     schemaVersion: z.literal(INTENT_SCHEMA_VERSION),
     contextId: z.string().regex(/^ictx1_[a-f0-9]{64}$/u),
     canonicalizationVersion: z.literal(INTENT_CANONICALIZATION_VERSION),
-    dictionaryVersion: z.string().regex(/^\d+\.\d+\.\d+$/u),
-    ruleVersion: z.string().regex(/^\d+\.\d+\.\d+$/u),
+    dictionaryVersion: semanticVersionSchema,
+    normalizationVersion: semanticVersionSchema,
+    matchingRuleVersion: semanticVersionSchema,
+    modifierRuleVersion: semanticVersionSchema,
+    dictionaryConflictPolicyVersion: semanticVersionSchema,
+    modifierConflictPolicyVersion: semanticVersionSchema,
     sourceEvidenceId: z.string().regex(/^ev1_[a-f0-9]{64}$/u),
     sourceSignalIds: z.array(z.string().regex(/^sig1_[a-f0-9]{64}$/u)).readonly(),
     matches: z.array(intentMatchSchema).min(1).readonly(),

@@ -56,6 +56,16 @@ const entries = [
   ['升值', 'INVESTMENT_INTENT', 'EVALUATING', 'QUALIFIED_PHRASE'],
   ['还有吗', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
   ['预约看房', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
+  ['还有房吗', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
+  ['发一下', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
+  ['还有在售房源吗', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
+  ['还有没有房', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
+  ['小区', 'PROPERTY_SEARCH', 'EXPLORING', 'QUALIFIED_PHRASE'],
+  ['楼市政策', 'PROPERTY_SEARCH', 'EXPLORING', 'QUALIFIED_PHRASE'],
+  ['新房', 'PROPERTY_SEARCH', 'EXPLORING', 'WEAK_TERM'],
+  ['公积金', 'FINANCIAL_PREPARATION', 'EVALUATING', 'WEAK_TERM'],
+  ['贷款', 'FINANCIAL_PREPARATION', 'EVALUATING', 'WEAK_TERM'],
+  ['学区', 'EDUCATION_NEED', 'EXPLORING', 'WEAK_TERM'],
 ].map(([normalizedText, intent, defaultStage, evidenceStrength], index) => ({
   termId: `term-${String(index).padStart(2, '0')}`,
   normalizedText,
@@ -86,9 +96,25 @@ const phrases: Record<string, string[]> = {
   RISK_CONCERN: ['风险', '会不会跌'],
   THIRD_PARTY_REFERENCE: ['朋友', '家人', '同事'],
   DISCUSSION_ONLY: ['讨论', '的人真多'],
-  ACTION_REQUEST: ['还有吗', '预约看房'],
-  PROMOTIONAL_CONTENT: ['广告', '推广'],
-  INFORMATIONAL_REPORTING: ['新闻', '报道', '市场播报'],
+  ACTION_REQUEST: [
+    '还有吗',
+    '还有房吗',
+    '预约看房',
+    '发一下',
+    '还有在售房源吗',
+    '欢迎联系我',
+    '咨询房源',
+  ],
+  PROMOTIONAL_CONTENT: ['广告', '推广', '售楼处活动', '优惠', '欢迎联系我', '点击头像'],
+  INFORMATIONAL_REPORTING: [
+    '新闻',
+    '报道',
+    '市场播报',
+    '政策发布',
+    '数据显示',
+    '专家称',
+    '正式调整',
+  ],
   AFFIRMATIVE: ['我想', '准备'],
   AMBIGUOUS: ['可能'],
 };
@@ -106,7 +132,15 @@ const modifierRuleSet = {
   ),
 };
 
-const run = (content: string, signalOrder: 'normal' | 'reverse' = 'normal') => {
+const run = (
+  content: string,
+  options: {
+    signalOrder?: 'normal' | 'reverse';
+    signals?: readonly Record<string, unknown>[];
+    dictionary?: Record<string, unknown>;
+    modifierRuleSet?: Record<string, unknown>;
+  } = {},
+) => {
   const signals = [
     {
       schemaVersion: '1.0.0',
@@ -131,25 +165,25 @@ const run = (content: string, signalOrder: 'normal' | 'reverse' = 'normal') => {
       ruleVersion: '1.0.0',
     },
   ];
+  const selectedSignals = options.signals ?? signals;
   return matchRealEstateIntent({
     evidence: { ...evidence, content },
-    signals: signalOrder === 'reverse' ? signals.reverse() : signals,
-    dictionary,
-    modifierRuleSet,
+    signals: options.signalOrder === 'reverse' ? [...selectedSignals].reverse() : selectedSignals,
+    dictionary: options.dictionary ?? dictionary,
+    modifierRuleSet: options.modifierRuleSet ?? modifierRuleSet,
   });
 };
 
 describe('deterministic real-estate intent matcher', () => {
-  test.each(cases)('$id', ({ text, intents, stage }) => {
+  test.each(cases)('$id', ({ text, matches }) => {
     const result = run(text);
-    if (intents.length === 0) {
+    if (matches.length === 0) {
       expect(result.status).toBe('NO_MATCH');
       return;
     }
     expect(result.status).toBe('MATCHED');
     if (result.status !== 'MATCHED') return;
-    expect(result.context.matches.map((match) => match.intent)).toEqual(intents);
-    expect(result.context.matches.some((match) => match.stage === stage)).toBe(true);
+    expect(result.context.matches.map(({ intent, stage }) => ({ intent, stage }))).toEqual(matches);
   });
 
   test('applies global safety independently of entry allowedModifiers', () => {
@@ -184,7 +218,7 @@ describe('deterministic real-estate intent matcher', () => {
 
   test('is byte-stable across replay and signal order', () => {
     expect(JSON.stringify(run('这个90平户型还有吗？'))).toBe(
-      JSON.stringify(run('这个90平户型还有吗？', 'reverse')),
+      JSON.stringify(run('这个90平户型还有吗？', { signalOrder: 'reverse' })),
     );
   });
 
@@ -208,5 +242,238 @@ describe('deterministic real-estate intent matcher', () => {
       modifierRuleSet,
     });
     expect(result).toMatchObject({ status: 'REJECTED', code: 'SIGNAL_EVIDENCE_MISMATCH' });
+  });
+
+  test('rejects a duplicate signalId', () => {
+    const validSignal = {
+      schemaVersion: '1.0.0',
+      signalId: `sig1_${'b'.repeat(64)}`,
+      signalCanonicalizationVersion: '1.0.0',
+      signalType: 'TOPIC_MENTION',
+      value: '房价',
+      sourceEvidenceId: evidence.evidenceId,
+      sourceFingerprint: fingerprint,
+      ruleId: 'price-signal',
+      ruleVersion: '1.0.0',
+    } as const;
+    expect(run('房价', { signals: [validSignal, validSignal] })).toMatchObject({
+      status: 'REJECTED',
+    });
+  });
+
+  test('does not allow a Signal to create an Intent without Evidence text support', () => {
+    const signal = {
+      schemaVersion: '1.0.0',
+      signalId: `sig1_${'d'.repeat(64)}`,
+      signalCanonicalizationVersion: '1.0.0',
+      signalType: 'TOPIC_MENTION',
+      value: '房价',
+      sourceEvidenceId: evidence.evidenceId,
+      sourceFingerprint: fingerprint,
+      ruleId: 'price-signal',
+      ruleVersion: '1.0.0',
+    } as const;
+    const signalEntry = { ...entries[6], upstreamSignalRuleIds: ['price-signal'] };
+    const signalDictionary = { ...dictionary, entries: [signalEntry] };
+
+    expect(run('今天阳光很好', { signals: [signal], dictionary: signalDictionary }).status).toBe(
+      'NO_MATCH',
+    );
+    const matched = run('房价', { signals: [signal], dictionary: signalDictionary });
+    expect(matched.status).toBe('MATCHED');
+    if (matched.status !== 'MATCHED') return;
+    expect(matched.context.matches).toHaveLength(1);
+    expect(matched.context.matches[0]?.signalIds).toEqual([signal.signalId]);
+  });
+
+  test.each([
+    '视频还有吗？',
+    '这个户型讲解视频还有吗？',
+    '房价这个视频能发一下吗？',
+    '链接发一下',
+    '这个楼盘介绍视频能看看吗？',
+  ])('does not treat a content asset request as HIGH_INTENT_ACTION: %s', (text) => {
+    const result = run(text);
+    if (result.status !== 'MATCHED') {
+      expect(result.status).toBe('NO_MATCH');
+      return;
+    }
+    expect(result.context.matches.map((match) => match.intent)).not.toContain('HIGH_INTENT_ACTION');
+  });
+
+  test.each([
+    '这个90平户型还有吗？',
+    '还有房吗？',
+    '可以预约看房吗？',
+    '发一下这个小区的房源',
+    '这个楼盘还有在售房源吗？',
+  ])('requires an explicit property action object: %s', (text) => {
+    const result = run(text);
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    expect(result.context.matches.map((match) => match.intent)).toContain('HIGH_INTENT_ACTION');
+  });
+
+  test.each(['房价', '房价吗？', '买房？', '首付？', '贷款？'])(
+    'keeps an isolated weak term safe: %s',
+    (text) => {
+      const weakDictionary = {
+        ...dictionary,
+        entries: entries.map((entry) => ({ ...entry, evidenceStrength: 'WEAK_TERM' })),
+      };
+      const result = run(text, { dictionary: weakDictionary });
+      expect(result.status).toBe('MATCHED');
+      if (result.status !== 'MATCHED') return;
+      expect(result.context.matches.every((match) => match.stage === 'CONTEXT_ONLY')).toBe(true);
+      expect(result.context.matches.every((match) => match.modifiers.includes('AMBIGUOUS'))).toBe(
+        true,
+      );
+    },
+  );
+
+  test('does not upgrade multiple co-occurring weak terms', () => {
+    const weakDictionary = {
+      ...dictionary,
+      entries: entries.map((entry) => ({ ...entry, evidenceStrength: 'WEAK_TERM' })),
+    };
+    const result = run('房价 首付 学区', { dictionary: weakDictionary });
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    expect(result.context.matches.every((match) => match.stage === 'CONTEXT_ONLY')).toBe(true);
+  });
+
+  test('keeps modifiers and stage clause-local', () => {
+    const result = run('我想买房。后来不准备买房。');
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    const propertyMatches = result.context.matches.filter(
+      (match) => match.intent === 'PROPERTY_SEARCH',
+    );
+    expect(propertyMatches).toHaveLength(2);
+    expect(propertyMatches[0]?.modifiers).toContain('AFFIRMATIVE');
+    expect(propertyMatches[1]?.modifiers).toContain('NEGATED');
+  });
+
+  test('does not leak informational safety into a later action clause', () => {
+    const result = run('楼市政策发布了。我想看看这个小区还有没有房。');
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    const firstClause = result.context.matches.filter((match) => match.clauseIndex === 0);
+    const secondClause = result.context.matches.filter((match) => match.clauseIndex === 1);
+    expect(firstClause.every((match) => match.stage === 'CONTEXT_ONLY')).toBe(true);
+    expect(secondClause.some((match) => match.intent === 'HIGH_INTENT_ACTION')).toBe(true);
+    expect(
+      secondClause.every((match) => !match.modifiers.includes('INFORMATIONAL_REPORTING')),
+    ).toBe(true);
+  });
+
+  test('changes context identity when a semantics-bearing version changes', () => {
+    const baseline = run('房价');
+    const changed = run('房价', {
+      dictionary: { ...dictionary, normalizationVersion: '1.0.1' },
+    });
+    expect(baseline.status).toBe('MATCHED');
+    expect(changed.status).toBe('MATCHED');
+    if (baseline.status !== 'MATCHED' || changed.status !== 'MATCHED') return;
+    expect(changed.context.contextId).not.toBe(baseline.context.contextId);
+  });
+
+  test('has a stable golden contextId', () => {
+    const result = run('这个90平户型还有吗？');
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    expect(result.context.contextId).toBe(
+      'ictx1_47e0f48ae07c6534dc19ae7f28041718f5f54b9ec9b6f82df20e21aea6d01f45',
+    );
+  });
+
+  test('rejects a sourceFingerprint-only mismatch', () => {
+    const signal = {
+      schemaVersion: '1.0.0',
+      signalId: `sig1_${'e'.repeat(64)}`,
+      signalCanonicalizationVersion: '1.0.0',
+      signalType: 'TOPIC_MENTION',
+      value: '房价',
+      sourceEvidenceId: evidence.evidenceId,
+      sourceFingerprint: 'f'.repeat(64),
+      ruleId: 'price-signal',
+      ruleVersion: '1.0.0',
+    } as const;
+    expect(run('房价', { signals: [signal] })).toMatchObject({
+      status: 'REJECTED',
+      code: 'SIGNAL_EVIDENCE_MISMATCH',
+    });
+  });
+
+  test.each(['CANDIDATE', 'RETIRED'])('does not execute %s dictionary entries', (status) => {
+    const inactiveDictionary = {
+      ...dictionary,
+      entries: entries.map((entry) => ({ ...entry, status })),
+    };
+    expect(run('房价', { dictionary: inactiveDictionary })).toMatchObject({
+      status: 'REJECTED',
+      code: 'NO_ACTIVE_DICTIONARY_ENTRY',
+    });
+  });
+
+  test('is byte-stable across entry, modifier-rule, and signal permutations', () => {
+    const baseline = run('这个90平户型还有吗？');
+    const permuted = run('这个90平户型还有吗？', {
+      signalOrder: 'reverse',
+      dictionary: { ...dictionary, entries: [...entries].reverse() },
+      modifierRuleSet: { ...modifierRuleSet, rules: [...modifierRuleSet.rules].reverse() },
+    });
+    expect(JSON.stringify(permuted)).toBe(JSON.stringify(baseline));
+  });
+
+  test.each([
+    '大连最新楼市政策发布',
+    '数据显示7月新房成交上涨',
+    '专家称房价可能继续调整',
+    '公积金政策今天正式调整',
+  ])('keeps informational reporting safe: %s', (text) => {
+    const result = run(text);
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    expect(result.context.matches.every((match) => match.stage === 'CONTEXT_ONLY')).toBe(true);
+    expect(
+      result.context.matches.every((match) => match.modifiers.includes('INFORMATIONAL_REPORTING')),
+    ).toBe(true);
+  });
+
+  test.each(['售楼处活动，预约看房送礼', '新房优惠，欢迎联系我', '点击头像咨询房源'])(
+    'keeps promotional content safe: %s',
+    (text) => {
+      const result = run(text);
+      expect(result.status).toBe('MATCHED');
+      if (result.status !== 'MATCHED') return;
+      expect(result.context.matches.every((match) => match.stage === 'CONTEXT_ONLY')).toBe(true);
+      expect(
+        result.context.matches.every((match) => match.modifiers.includes('PROMOTIONAL_CONTENT')),
+      ).toBe(true);
+    },
+  );
+
+  test.each([
+    ['matchingRuleVersion', { dictionary: { ...dictionary, matchingRuleVersion: '1.0.1' } }],
+    [
+      'dictionaryConflictPolicyVersion',
+      { dictionary: { ...dictionary, conflictPolicyVersion: '1.0.1' } },
+    ],
+    [
+      'modifierRuleVersion',
+      { modifierRuleSet: { ...modifierRuleSet, modifierRuleVersion: '1.0.1' } },
+    ],
+    [
+      'modifierConflictPolicyVersion',
+      { modifierRuleSet: { ...modifierRuleSet, conflictPolicyVersion: '1.0.1' } },
+    ],
+  ])('includes %s in context identity', (_version, options) => {
+    const baseline = run('房价');
+    const changed = run('房价', options);
+    expect(baseline.status).toBe('MATCHED');
+    expect(changed.status).toBe('MATCHED');
+    if (baseline.status !== 'MATCHED' || changed.status !== 'MATCHED') return;
+    expect(changed.context.contextId).not.toBe(baseline.context.contextId);
   });
 });
