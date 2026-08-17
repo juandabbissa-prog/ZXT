@@ -115,6 +115,34 @@ describe('deterministic seed corpus compiler', () => {
     });
   });
 
+  test('marks incompatible default stages on the same support as conflicted', () => {
+    const rules = [
+      makeEntry('buy-exploring', '买房', 'PROPERTY_SEARCH', 'EXPLORING', 'QUALIFIED_PHRASE'),
+      makeEntry('buy-preparing', '买房', 'PROPERTY_SEARCH', 'PREPARING', 'QUALIFIED_PHRASE'),
+    ];
+    const candidate = compile([{ ...corpus.items[0]!, rawText: '买房' }], rules).candidates[0];
+    expect(candidate?.mappingStatus).toBe('CONFLICTED');
+  });
+
+  test('marks incompatible evidence strengths on the same support as conflicted', () => {
+    const rules = [
+      makeEntry('buy-weak', '买房', 'PROPERTY_SEARCH', 'EXPLORING', 'WEAK_TERM'),
+      makeEntry('buy-qualified', '买房', 'PROPERTY_SEARCH', 'EXPLORING', 'QUALIFIED_PHRASE'),
+    ];
+    const candidate = compile([{ ...corpus.items[0]!, rawText: '买房' }], rules).candidates[0];
+    expect(candidate?.mappingStatus).toBe('CONFLICTED');
+  });
+
+  test('keeps semantically compatible rules with different term IDs non-conflicting', () => {
+    const rules = [
+      makeEntry('buy-a', '买房', 'PROPERTY_SEARCH', 'EXPLORING', 'QUALIFIED_PHRASE'),
+      makeEntry('buy-b', '买房', 'PROPERTY_SEARCH', 'EXPLORING', 'QUALIFIED_PHRASE'),
+    ];
+    const candidate = compile([{ ...corpus.items[0]!, rawText: '买房' }], rules).candidates[0];
+    expect(candidate).toMatchObject({ mappingStatus: 'MAPPED' });
+    expect(candidate?.matchedRules.map((rule) => rule.termId)).toEqual(['buy-a', 'buy-b']);
+  });
+
   test('retains auditable reference matches and never derives modifiers from allowedModifiers', () => {
     const candidate = compile().candidates.find((x) => x.normalizedText === '首付多少钱');
     expect(candidate?.matchedRules).toEqual(

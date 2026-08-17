@@ -63,14 +63,14 @@ export const compileSeedCorpus = (input: unknown): SeedCompilationResult => {
     const proposedDefaultStages = [...new Set(matchedRules.map((rule) => rule.defaultStage))].sort(
       (a, b) => INTENT_STAGES.indexOf(a) - INTENT_STAGES.indexOf(b),
     );
-    const supportIntents = new Map<string, Set<string>>();
+    const supportSignatures = new Map<string, Set<string>>();
     for (const rule of matchedRules) {
       const key = `${rule.matchedSpan.start}:${rule.matchedSpan.end}:${rule.normalizedPhrase}`;
-      const intents = supportIntents.get(key) ?? new Set<string>();
-      intents.add(rule.intent);
-      supportIntents.set(key, intents);
+      const signatures = supportSignatures.get(key) ?? new Set<string>();
+      signatures.add(`${rule.intent}\u0000${rule.defaultStage}\u0000${rule.evidenceStrength}`);
+      supportSignatures.set(key, signatures);
     }
-    const conflicted = [...supportIntents.values()].some((intents) => intents.size > 1);
+    const conflicted = [...supportSignatures.values()].some((signatures) => signatures.size > 1);
     const weakOnly =
       matchedRules.length > 0 &&
       matchedRules.every((rule) => rule.evidenceStrength === 'WEAK_TERM');
