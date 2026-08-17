@@ -52,6 +52,24 @@ const compile = (items = corpus.items, dictionaryEntries = entries, sourceArtifa
   });
 
 describe('deterministic seed corpus compiler', () => {
+  test('rejects incompatible corpus and dictionary compiler metadata', () => {
+    expect(() => compile()).not.toThrow();
+
+    for (const mismatch of [
+      { market: 'other-real-estate' },
+      { locale: 'en-US' },
+      { normalizationVersion: '9.9.9' },
+    ]) {
+      expect(() =>
+        compileSeedCorpus({
+          compilerVersion: '1.0.0',
+          corpus,
+          dictionary: { ...dictionary, ...mismatch },
+        }),
+      ).toThrow();
+    }
+  });
+
   test('normalizes and exact-deduplicates while preserving the full audit trail', () => {
     const input = structuredClone(corpus.items);
     const result = compile(input);
