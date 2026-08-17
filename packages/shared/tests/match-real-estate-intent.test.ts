@@ -60,6 +60,7 @@ const entries = [
   ['发一下', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
   ['还有在售房源吗', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
   ['还有没有房', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
+  ['有没有房', 'HIGH_INTENT_ACTION', 'ACTION_REQUEST', 'EXPLICIT_ACTION'],
   ['小区', 'PROPERTY_SEARCH', 'EXPLORING', 'QUALIFIED_PHRASE'],
   ['楼市政策', 'PROPERTY_SEARCH', 'EXPLORING', 'QUALIFIED_PHRASE'],
   ['新房', 'PROPERTY_SEARCH', 'EXPLORING', 'WEAK_TERM'],
@@ -92,7 +93,7 @@ const dictionary = {
   entries,
 };
 const phrases: Record<string, string[]> = {
-  QUESTION: ['吗', '多少', '?'],
+  QUESTION: ['吗', '多少', '?', '有没有房'],
   NEGATED: ['不准备', '不打算', '不买'],
   RISK_CONCERN: ['风险', '会不会跌'],
   THIRD_PARTY_REFERENCE: ['朋友', '家人', '同事'],
@@ -100,6 +101,7 @@ const phrases: Record<string, string[]> = {
   ACTION_REQUEST: [
     '还有吗',
     '还有房吗',
+    '有没有房',
     '预约看房',
     '发一下',
     '还有在售房源吗',
@@ -301,6 +303,9 @@ describe('deterministic real-estate intent matcher', () => {
     '房产新闻还有吗？',
     '房产政策发一下',
     '房产视频还有吗？',
+    '有没有视频？',
+    '有没有链接？',
+    '有没有文章？',
   ])('does not treat a content asset request as HIGH_INTENT_ACTION: %s', (text) => {
     const result = run(text);
     if (result.status !== 'MATCHED') {
@@ -325,6 +330,15 @@ describe('deterministic real-estate intent matcher', () => {
     expect(result.status).toBe('MATCHED');
     if (result.status !== 'MATCHED') return;
     expect(result.context.matches.map((match) => match.intent)).toContain('HIGH_INTENT_ACTION');
+  });
+
+  test('matches an explicit housing availability action', () => {
+    const result = run('有没有房？');
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    const match = result.context.matches.find((item) => item.intent === 'HIGH_INTENT_ACTION');
+    expect(match?.modifiers).toContain('QUESTION');
+    expect(match?.modifiers).toContain('ACTION_REQUEST');
   });
 
   test.each([
