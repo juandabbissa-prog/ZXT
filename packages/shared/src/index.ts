@@ -13,6 +13,7 @@ export * from './repository/content-signal.repository';
 export * from './repository/keyword.repository';
 export * from './repository/lead-scoring.repository';
 export * from './real-estate-intent';
+export * from './real-estate-intent-seed';
 export * from './service';
 export * from './types/api';
 export * from './understanding-context';

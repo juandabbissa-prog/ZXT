@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "1.0.0",
+  "corpusId": "synthetic-dalian-seed",
+  "corpusVersion": "1.0.0",
+  "source": "SEED_GENERATED",
+  "market": "dalian-real-estate",
+  "locale": "zh-CN",
+  "normalizationVersion": "1.0.0",
+  "items": [
+    {
+      "seedId": "seed-1",
+      "rawText": "大连买房",
+      "source": "SEED_GENERATED",
+      "provenance": {
+        "sourceReference": null,
+        "sourceArtifactId": "synthetic-v1",
+        "generationMethod": "TEST_FIXTURE"
+      },
+      "originalOrder": 0
+    },
+    {
+      "seedId": "seed-2",
+      "rawText": " 大连买房 ",
+      "source": "SEED_GENERATED",
+      "provenance": {
+        "sourceReference": "fixture:2",
+        "sourceArtifactId": "synthetic-v1",
+        "generationMethod": "TEST_FIXTURE"
+      },
+      "originalOrder": 1
+    },
+    {
+      "seedId": "seed-3",
+      "rawText": "大连买房　",
+      "source": "SEED_GENERATED",
+      "provenance": {
+        "sourceReference": "fixture:3",
+        "sourceArtifactId": "synthetic-v1",
+        "generationMethod": "TEST_FIXTURE"
+      },
+      "originalOrder": 2
+    },
+    {
+      "seedId": "seed-4",
+      "rawText": "大连购房",
+      "source": "SEED_GENERATED",
+      "provenance": {
+        "sourceReference": null,
+        "sourceArtifactId": "synthetic-v1",
+        "generationMethod": "TEST_FIXTURE"
+      },
+      "originalOrder": 3
+    },
+    {
+      "seedId": "seed-5",
+      "rawText": "房价",
+      "source": "SEED_GENERATED",
+      "provenance": {
+        "sourceReference": null,
+        "sourceArtifactId": "synthetic-v1",
+        "generationMethod": "TEST_FIXTURE"
+      },
+      "originalOrder": 4
+    },
+    {
+      "seedId": "seed-6",
+      "rawText": "首付多少钱",
+      "source": "SEED_GENERATED",
+      "provenance": {
+        "sourceReference": null,
+        "sourceArtifactId": "synthetic-v1",
+        "generationMethod": "TEST_FIXTURE"
+      },
+      "originalOrder": 5
+    },
+    {
+      "seedId": "seed-7",
+      "rawText": "值得吗",
+      "source": "SEED_GENERATED",
+      "provenance": {
+        "sourceReference": null,
+        "sourceArtifactId": "synthetic-v1",
+        "generationMethod": "TEST_FIXTURE"
+      },
+      "originalOrder": 6
+    },
+    {
+      "seedId": "seed-8",
+      "rawText": "　　",
+      "source": "SEED_GENERATED",
+      "provenance": {
+        "sourceReference": null,
+        "sourceArtifactId": "synthetic-v1",
+        "generationMethod": "TEST_FIXTURE"
+      },
+      "originalOrder": 7
+    }
+  ]
+}
