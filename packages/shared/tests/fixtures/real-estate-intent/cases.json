@@ -1,0 +1,69 @@
+[
+  {
+    "id": "property-search",
+    "text": "想看看大连的二手房",
+    "intents": ["PROPERTY_SEARCH"],
+    "stage": "EXPLORING"
+  },
+  {
+    "id": "price",
+    "text": "这个楼盘首付多少钱？",
+    "intents": ["PROPERTY_SEARCH", "PRICE_CONCERN", "FINANCIAL_PREPARATION"],
+    "stage": "EVALUATING"
+  },
+  {
+    "id": "decision",
+    "text": "现在买房合适吗？",
+    "intents": ["PROPERTY_SEARCH", "PURCHASE_DECISION"],
+    "stage": "EVALUATING"
+  },
+  {
+    "id": "qualification",
+    "text": "外地人在大连买房需要什么资格？",
+    "intents": ["PROPERTY_SEARCH", "BUYING_QUALIFICATION"],
+    "stage": "EVALUATING"
+  },
+  {
+    "id": "education",
+    "text": "孩子上学想了解学区房",
+    "intents": ["EDUCATION_NEED"],
+    "stage": "EXPLORING"
+  },
+  {
+    "id": "life-stage",
+    "text": "准备结婚后换房",
+    "intents": ["LIFE_STAGE_CHANGE"],
+    "stage": "EXPLORING"
+  },
+  {
+    "id": "investment",
+    "text": "买来出租有升值空间吗？",
+    "intents": ["INVESTMENT_INTENT"],
+    "stage": "EVALUATING"
+  },
+  { "id": "bare-action", "text": "视频还有吗？", "intents": [], "stage": null },
+  {
+    "id": "anchored-action",
+    "text": "这个90平户型还有吗？",
+    "intents": ["PROPERTY_SEARCH", "HIGH_INTENT_ACTION"],
+    "stage": "ACTION_REQUEST"
+  },
+  {
+    "id": "negated",
+    "text": "我不准备买房，只是看看新闻",
+    "intents": ["PROPERTY_SEARCH"],
+    "stage": "CONTEXT_ONLY"
+  },
+  {
+    "id": "third-party",
+    "text": "朋友想了解大连房价",
+    "intents": ["PRICE_CONCERN"],
+    "stage": "CONTEXT_ONLY"
+  },
+  {
+    "id": "promotion",
+    "text": "这是售楼处广告，预约看房",
+    "intents": ["PROPERTY_SEARCH", "HIGH_INTENT_ACTION"],
+    "stage": "CONTEXT_ONLY"
+  }
+]
