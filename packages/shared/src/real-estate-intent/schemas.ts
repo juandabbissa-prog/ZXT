@@ -3,15 +3,13 @@ import { evidenceEnvelopeSchema } from '../evidence-intake/schemas';
 import { evidenceSignalSchema } from '../evidence-signal/schemas';
 import {
   INTENT_CANONICALIZATION_VERSION,
-  INTENT_CONFLICT_POLICY_VERSION,
-  INTENT_MATCHING_RULE_VERSION,
   INTENT_MODIFIERS,
-  INTENT_NORMALIZATION_VERSION,
   INTENT_SCHEMA_VERSION,
   INTENT_STAGES,
   REAL_ESTATE_INTENT_ERROR_CODES,
   REAL_ESTATE_INTENTS,
 } from './contracts';
+import { normalizeIntentText } from './normalize-intent-text';
 
 const identifierSchema = z.string().trim().min(1).max(160);
 const semanticVersionSchema = z.string().regex(/^\d+\.\d+\.\d+$/u);
@@ -19,7 +17,7 @@ const normalizedTextSchema = z
   .string()
   .min(1)
   .max(500)
-  .refine((value) => value === value.normalize('NFC').trim().replace(/\s+/gu, ' ').toLowerCase(), {
+  .refine((value) => value === normalizeIntentText(value), {
     message: 'Expected canonical intent text',
   });
 
@@ -46,9 +44,9 @@ export const intentDictionarySchema = z
     dictionaryVersion: semanticVersionSchema,
     locale: z.string().trim().min(2).max(35),
     market: identifierSchema,
-    normalizationVersion: semanticVersionSchema.default(INTENT_NORMALIZATION_VERSION),
-    matchingRuleVersion: semanticVersionSchema.default(INTENT_MATCHING_RULE_VERSION),
-    conflictPolicyVersion: semanticVersionSchema.default(INTENT_CONFLICT_POLICY_VERSION),
+    normalizationVersion: semanticVersionSchema,
+    matchingRuleVersion: semanticVersionSchema,
+    conflictPolicyVersion: semanticVersionSchema,
     entries: z.array(intentDictionaryEntrySchema).readonly(),
   })
   .strict()
@@ -74,7 +72,7 @@ export const modifierRuleSchema = z
 export const modifierRuleSetSchema = z
   .object({
     modifierRuleVersion: semanticVersionSchema,
-    conflictPolicyVersion: semanticVersionSchema.default(INTENT_CONFLICT_POLICY_VERSION),
+    conflictPolicyVersion: semanticVersionSchema,
     scope: z.literal('CLAUSE'),
     rules: z.array(modifierRuleSchema).readonly(),
   })

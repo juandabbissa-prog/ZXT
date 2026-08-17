@@ -66,6 +66,7 @@ const entries = [
   ['公积金', 'FINANCIAL_PREPARATION', 'EVALUATING', 'WEAK_TERM'],
   ['贷款', 'FINANCIAL_PREPARATION', 'EVALUATING', 'WEAK_TERM'],
   ['学区', 'EDUCATION_NEED', 'EXPLORING', 'WEAK_TERM'],
+  ['高新区', 'PROPERTY_SEARCH', 'EXPLORING', 'QUALIFIED_PHRASE'],
 ].map(([normalizedText, intent, defaultStage, evidenceStrength], index) => ({
   termId: `term-${String(index).padStart(2, '0')}`,
   normalizedText,
@@ -91,7 +92,7 @@ const dictionary = {
   entries,
 };
 const phrases: Record<string, string[]> = {
-  QUESTION: ['吗', '多少', '？', '?'],
+  QUESTION: ['吗', '多少', '?'],
   NEGATED: ['不准备', '不打算', '不买'],
   RISK_CONCERN: ['风险', '会不会跌'],
   THIRD_PARTY_REFERENCE: ['朋友', '家人', '同事'],
@@ -187,7 +188,7 @@ describe('deterministic real-estate intent matcher', () => {
   });
 
   test('applies global safety independently of entry allowedModifiers', () => {
-    const result = run('朋友不准备买房，只是新闻讨论');
+    const result = run('朋友不准备买房新闻讨论');
     expect(result.status).toBe('MATCHED');
     if (result.status !== 'MATCHED') return;
     expect(result.context.matches[0]?.modifiers).toEqual(
@@ -292,6 +293,8 @@ describe('deterministic real-estate intent matcher', () => {
     '房价这个视频能发一下吗？',
     '链接发一下',
     '这个楼盘介绍视频能看看吗？',
+    '这个小区的文章还有吗？',
+    '这个小区的资料还有吗？',
   ])('does not treat a content asset request as HIGH_INTENT_ACTION: %s', (text) => {
     const result = run(text);
     if (result.status !== 'MATCHED') {
@@ -307,6 +310,9 @@ describe('deterministic real-estate intent matcher', () => {
     '可以预约看房吗？',
     '发一下这个小区的房源',
     '这个楼盘还有在售房源吗？',
+    '看完视频后想预约看房',
+    '这个介绍视频看完了，我想看看还有没有房',
+    '这套房还有吗？',
   ])('requires an explicit property action object: %s', (text) => {
     const result = run(text);
     expect(result.status).toBe('MATCHED');
@@ -364,6 +370,64 @@ describe('deterministic real-estate intent matcher', () => {
     expect(secondClause.some((match) => match.intent === 'HIGH_INTENT_ACTION')).toBe(true);
     expect(
       secondClause.every((match) => !match.modifiers.includes('INFORMATIONAL_REPORTING')),
+    ).toBe(true);
+  });
+
+  test('scopes negation to a connector-aware Chinese subclause', () => {
+    const result = run('这个楼盘不错，但我不打算买。');
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    expect(result.context.matches[0]?.intent).toBe('PROPERTY_SEARCH');
+    expect(result.context.matches[0]?.modifiers).not.toContain('NEGATED');
+  });
+
+  test('does not leak third-party context across a contrast connector', () => {
+    const result = run('朋友想买房，但我自己想看看高新区还有没有房。');
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    const first = result.context.matches.filter((match) => match.clauseIndex === 0);
+    const second = result.context.matches.filter((match) => match.clauseIndex === 1);
+    expect(first.every((match) => match.modifiers.includes('THIRD_PARTY_REFERENCE'))).toBe(true);
+    expect(first.every((match) => match.stage === 'CONTEXT_ONLY')).toBe(true);
+    expect(second.some((match) => match.intent === 'HIGH_INTENT_ACTION')).toBe(true);
+    expect(second.every((match) => !match.modifiers.includes('THIRD_PARTY_REFERENCE'))).toBe(true);
+  });
+
+  test('does not leak reporting context across a contrast connector', () => {
+    const result = run('楼市政策发布了，但我想看看这个小区还有没有房。');
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    const first = result.context.matches.filter((match) => match.clauseIndex === 0);
+    const second = result.context.matches.filter((match) => match.clauseIndex === 1);
+    expect(first.every((match) => match.modifiers.includes('INFORMATIONAL_REPORTING'))).toBe(true);
+    expect(second.some((match) => match.intent === 'HIGH_INTENT_ACTION')).toBe(true);
+    expect(second.every((match) => !match.modifiers.includes('INFORMATIONAL_REPORTING'))).toBe(
+      true,
+    );
+  });
+
+  test('keeps ordinary list commas inside one action context', () => {
+    const result = run('大连高新区，90平左右，还有房吗？');
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    expect(new Set(result.context.matches.map((match) => match.clauseIndex))).toEqual(new Set([0]));
+    expect(result.context.matches.map((match) => match.intent)).toContain('HIGH_INTENT_ACTION');
+  });
+
+  test('preserves evaluation, negation, and third-party facts separately', () => {
+    const result = run('这个楼盘不错，但我不打算买。朋友倒是想问首付。');
+    expect(result.status).toBe('MATCHED');
+    if (result.status !== 'MATCHED') return;
+    expect(result.context.matches.some((match) => match.clauseIndex === 0)).toBe(true);
+    expect(
+      result.context.matches
+        .filter((match) => match.clauseIndex === 0)
+        .every((match) => !match.modifiers.includes('NEGATED')),
+    ).toBe(true);
+    expect(
+      result.context.matches
+        .filter((match) => match.clauseIndex === 2)
+        .every((match) => match.modifiers.includes('THIRD_PARTY_REFERENCE')),
     ).toBe(true);
   });
 

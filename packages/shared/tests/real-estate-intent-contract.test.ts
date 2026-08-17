@@ -94,4 +94,50 @@ describe('real-estate intent contracts', () => {
       }).success,
     ).toBe(false);
   });
+
+  test('uses runtime NFKC normalization for dictionary terms and modifier phrases', () => {
+    const entry = dictionary.entries[0];
+    expect(
+      intentDictionarySchema.safeParse({
+        ...dictionary,
+        entries: [{ ...entry, normalizedText: '９０平' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      intentDictionarySchema.safeParse({
+        ...dictionary,
+        entries: [{ ...entry, normalizedText: '90平' }],
+      }).success,
+    ).toBe(true);
+    expect(
+      intentDictionarySchema.safeParse({
+        ...dictionary,
+        entries: [{ ...entry, normalizedText: 'e\u0301' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      modifierRuleSetSchema.safeParse({
+        ...modifierRules,
+        rules: [{ ...modifierRules.rules[0], normalizedPhrases: ['ＡＢＣ'] }],
+      }).success,
+    ).toBe(false);
+  });
+
+  test.each(['normalizationVersion', 'matchingRuleVersion', 'conflictPolicyVersion'])(
+    'requires explicit dictionary %s',
+    (field) => {
+      const candidate = { ...dictionary } as Record<string, unknown>;
+      delete candidate[field];
+      expect(intentDictionarySchema.safeParse(candidate).success).toBe(false);
+    },
+  );
+
+  test.each(['modifierRuleVersion', 'conflictPolicyVersion'])(
+    'requires explicit modifier rule-set %s',
+    (field) => {
+      const candidate = { ...modifierRules } as Record<string, unknown>;
+      delete candidate[field];
+      expect(modifierRuleSetSchema.safeParse(candidate).success).toBe(false);
+    },
+  );
 });

@@ -11,8 +11,109 @@ import {
 
 const strengthRank = { WEAK_TERM: 0, QUALIFIED_PHRASE: 1, EXPLICIT_ACTION: 2 } as const;
 const safetyModifiers = new Set<string>(GLOBAL_SAFETY_MODIFIERS);
-const contentAssetObjects = ['视频', '链接', '讲解', '内容', '资料视频', '帖子', '文章'] as const;
-const propertyActionObjects = ['房源', '户型', '小区', '楼盘', '看房', '还有房', '在售房'] as const;
+const contentAssetObjects = [
+  '视频',
+  '链接',
+  '讲解',
+  '内容',
+  '资料视频',
+  '资料',
+  '帖子',
+  '文章',
+] as const;
+const propertyActionObjects = [
+  '房源',
+  '户型',
+  '小区',
+  '楼盘',
+  '看房',
+  '房子',
+  '在售房源',
+  '房',
+] as const;
+
+type ActionTargetDecision = Readonly<{
+  actionPhrase: string;
+  actionStart: number;
+  targetCategory: 'PROPERTY_ACTION' | 'CONTENT_ASSET_ACTION' | 'UNKNOWN';
+  targetPhrase: string | null;
+  targetStart: number | null;
+}>;
+
+const spanDistance = (
+  actionStart: number,
+  actionLength: number,
+  targetStart: number,
+  targetLength: number,
+): number => {
+  const actionEnd = actionStart + actionLength;
+  const targetEnd = targetStart + targetLength;
+  if (targetEnd <= actionStart) return actionStart - targetEnd;
+  if (actionEnd <= targetStart) return targetStart - actionEnd;
+  return 0;
+};
+
+const isPropertyObjectOccurrence = (value: string, phrase: string, start: number): boolean =>
+  phrase !== '房' || !['价', '贷'].includes(value[start + phrase.length] ?? '');
+
+const findObjectOccurrences = (
+  value: string,
+  phrases: readonly string[],
+  category: 'PROPERTY_ACTION' | 'CONTENT_ASSET_ACTION',
+): ReadonlyArray<Readonly<{ category: typeof category; phrase: string; start: number }>> =>
+  phrases.flatMap((phrase) => {
+    const occurrences: Array<
+      Readonly<{ category: typeof category; phrase: string; start: number }>
+    > = [];
+    let start = value.indexOf(phrase);
+    while (start >= 0) {
+      if (category !== 'PROPERTY_ACTION' || isPropertyObjectOccurrence(value, phrase, start)) {
+        occurrences.push({ category, phrase, start });
+      }
+      start = value.indexOf(phrase, start + phrase.length);
+    }
+    return occurrences;
+  });
+
+const classifyActionTarget = (clause: string, actionPhrase: string): ActionTargetDecision => {
+  const actionStart = clause.indexOf(actionPhrase);
+  const directPropertyTarget = propertyActionObjects.find((object) => {
+    const start = actionPhrase.indexOf(object);
+    return start >= 0 && isPropertyObjectOccurrence(actionPhrase, object, start);
+  });
+  const directContentTarget = contentAssetObjects.find((object) => actionPhrase.includes(object));
+  if (directPropertyTarget && !directContentTarget) {
+    return {
+      actionPhrase,
+      actionStart,
+      targetCategory: 'PROPERTY_ACTION',
+      targetPhrase: directPropertyTarget,
+      targetStart: actionStart + actionPhrase.indexOf(directPropertyTarget),
+    };
+  }
+
+  const targets = [
+    ...findObjectOccurrences(clause, propertyActionObjects, 'PROPERTY_ACTION'),
+    ...findObjectOccurrences(clause, contentAssetObjects, 'CONTENT_ASSET_ACTION'),
+  ].sort((left, right) => {
+    const distance =
+      spanDistance(actionStart, actionPhrase.length, left.start, left.phrase.length) -
+      spanDistance(actionStart, actionPhrase.length, right.start, right.phrase.length);
+    if (distance !== 0) return distance;
+    if (left.category !== right.category) return left.category === 'CONTENT_ASSET_ACTION' ? -1 : 1;
+    if (left.start !== right.start) return left.start - right.start;
+    if (left.phrase.length !== right.phrase.length) return right.phrase.length - left.phrase.length;
+    return compareText(left.phrase, right.phrase);
+  });
+  const target = targets[0];
+  return {
+    actionPhrase,
+    actionStart,
+    targetCategory: target?.category ?? 'UNKNOWN',
+    targetPhrase: target?.phrase ?? null,
+    targetStart: target?.start ?? null,
+  };
+};
 
 const compareText = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
@@ -63,14 +164,11 @@ export const matchRealEstateIntent = (input: unknown): RealEstateIntentMatchResu
   const clauses = segmentIntentClauses(evidence.content);
   for (const [clauseIndex, clause] of clauses.entries()) {
     const clauseEntries = entries.filter((entry) => clause.includes(entry.normalizedText));
-    const hasContentAssetObject = contentAssetObjects.some((object) => clause.includes(object));
-    const hasPropertyActionObject = propertyActionObjects.some((object) => clause.includes(object));
     const eligibleEntries = clauseEntries.filter((entry) => {
       if (entry.intent !== 'HIGH_INTENT_ACTION') return true;
+      const target = classifyActionTarget(clause, entry.normalizedText);
       return (
-        entry.evidenceStrength === 'EXPLICIT_ACTION' &&
-        hasPropertyActionObject &&
-        !hasContentAssetObject
+        entry.evidenceStrength === 'EXPLICIT_ACTION' && target.targetCategory === 'PROPERTY_ACTION'
       );
     });
     const hasStrongerEntry = eligibleEntries.some(
