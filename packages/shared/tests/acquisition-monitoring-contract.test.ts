@@ -173,6 +173,56 @@ describe('Acquisition Monitoring contracts', () => {
     ).toBe(false);
   });
 
+  test('rejects invalid quota and currency values', () => {
+    expect(
+      sourceCapabilityDescriptorSchema.safeParse({
+        ...sourceCapability,
+        quota: { ...sourceCapability.quota, limit: -1 },
+      }).success,
+    ).toBe(false);
+    expect(
+      sourceCapabilityDescriptorSchema.safeParse({
+        ...sourceCapability,
+        quota: { ...sourceCapability.quota, remaining: -1 },
+      }).success,
+    ).toBe(false);
+    expect(
+      sourceCapabilityDescriptorSchema.safeParse({
+        ...sourceCapability,
+        quota: { ...sourceCapability.quota, limit: 10, remaining: 11 },
+      }).success,
+    ).toBe(false);
+    expect(
+      sourceCapabilityDescriptorSchema.safeParse({
+        ...sourceCapability,
+        costPerCall: { amountMinor: 3, currency: 'yuan' },
+      }).success,
+    ).toBe(false);
+    expect(
+      sourceCapabilityDescriptorSchema.safeParse({
+        ...sourceCapability,
+        costPerCall: { amountMinor: -1, currency: 'CNY' },
+      }).success,
+    ).toBe(false);
+  });
+
+  test('represents free cost as null', () => {
+    expect(
+      sourceCapabilityDescriptorSchema.safeParse({
+        ...sourceCapability,
+        costModel: 'FREE',
+        costPerCall: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      sourceCapabilityDescriptorSchema.safeParse({
+        ...sourceCapability,
+        costModel: 'FREE',
+        costPerCall: { amountMinor: 0, currency: 'CNY' },
+      }).success,
+    ).toBe(false);
+  });
+
   test('accepts an Account Watchlist entry without ranking fields', () => {
     const parsed = accountWatchEntrySchema.parse(structuredClone(accountWatchEntry));
 

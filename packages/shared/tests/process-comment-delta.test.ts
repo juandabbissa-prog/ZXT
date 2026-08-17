@@ -26,6 +26,7 @@ const observation = (
   occurredAt: OCCURRED_AT,
   observedAt: CHECKED_AT,
   deletionState: 'ACTIVE',
+  priorCanonicalCommentIdentity: null,
   sourceReference: `provider-a/comment-${index}`,
   ...overrides,
 });
@@ -152,7 +153,8 @@ describe('Comment identity', () => {
     const first = deriveCommentIdentity(input);
     const second = deriveCommentIdentity({ ...input, sourceId: 'provider-b' });
 
-    expect(first).toEqual(second);
+    expect(first.sourceLocalCommentIdentity).not.toBe(second.sourceLocalCommentIdentity);
+    expect(first.canonicalCommentIdentity).toBe(second.canonicalCommentIdentity);
     expect(first.identityStrength).toBe('WEAK_FINGERPRINT');
     expect(input).toEqual(before);
   });
@@ -291,6 +293,18 @@ describe('processCommentDelta', () => {
       'provider-a',
       'provider-b',
     ]);
+    expect(
+      result.newComments[0]!.observations.map(
+        ({ sourceLocalCommentIdentity }) => sourceLocalCommentIdentity,
+      ),
+    ).toHaveLength(2);
+    expect(
+      new Set(
+        result.newComments[0]!.observations.map(
+          ({ sourceLocalCommentIdentity }) => sourceLocalCommentIdentity,
+        ),
+      ).size,
+    ).toBe(2);
     expect(result.duplicateObservations).toEqual([
       {
         canonicalCommentIdentity: result.newComments[0]!.identity.canonicalCommentIdentity,
@@ -298,6 +312,41 @@ describe('processCommentDelta', () => {
         sourceIds: ['provider-a', 'provider-b'],
       },
     ]);
+  });
+
+  test('is byte-stable when cross-source observations reverse order', () => {
+    const first = observation(11);
+    const second = observation(11, {
+      sourceId: 'provider-b',
+      sourceVideoIdentity: 'source-video-b',
+      sourceReference: 'provider-b/comment-11',
+    });
+    const input = {
+      knownSnapshot: knownSnapshot([]),
+      state: { ...state(), knownCommentCount: 0 },
+      sourceResults: [success('provider-a'), success('provider-b')],
+    };
+
+    const forward = processCommentDelta({ ...input, observations: [first, second] });
+    const reverse = processCommentDelta({ ...input, observations: [second, first] });
+
+    expect(JSON.stringify(forward)).toBe(JSON.stringify(reverse));
+  });
+
+  test('uses code-unit ordering for Unicode source references', () => {
+    const first = observation(12, { sourceReference: 'provider-a/源' });
+    const second = observation(12, { sourceReference: 'provider-a/z' });
+
+    const result = processCommentDelta({
+      observations: [first, second],
+      knownSnapshot: knownSnapshot([]),
+      state: { ...state(), knownCommentCount: 0 },
+      sourceResults: [success()],
+    });
+
+    expect(
+      result.newComments[0]!.observations.map(({ sourceReference }) => sourceReference),
+    ).toEqual(['provider-a/z', 'provider-a/源']);
   });
 
   test('does not create a new comment when stable identity content changes', () => {
@@ -353,6 +402,59 @@ describe('processCommentDelta', () => {
     expect(result.nextState.knownCommentCount).toBe(1);
   });
 
+  test.each(['SOURCE_LOCAL', 'ABSENT'] as const)(
+    'uses prior canonical identity for a %s tombstone',
+    (sourceCommentIdKind) => {
+      const active = observation(41, {
+        sourceCommentIdKind,
+        sourceCommentId: sourceCommentIdKind === 'ABSENT' ? null : 'local-41',
+      });
+      const priorCanonicalCommentIdentity = deriveCommentIdentity(active).canonicalCommentIdentity;
+      const tombstone = observation(41, {
+        sourceCommentIdKind,
+        sourceCommentId: sourceCommentIdKind === 'ABSENT' ? null : 'local-41',
+        content: '已删除',
+        deletionState: 'DELETED',
+        priorCanonicalCommentIdentity,
+      });
+
+      const result = processCommentDelta({
+        observations: [tombstone],
+        knownSnapshot: knownSnapshot([active]),
+        state: { ...state(), knownCommentCount: 1 },
+        sourceResults: [success()],
+      });
+
+      expect(result.status).toBe('PROCESSED');
+      expect(result.explicitDeletions).toEqual([
+        { canonicalCommentIdentity: priorCanonicalCommentIdentity, sourceIds: ['provider-a'] },
+      ]);
+    },
+  );
+
+  test.each(['SOURCE_LOCAL', 'ABSENT'] as const)(
+    'rejects a %s tombstone without prior canonical identity',
+    (sourceCommentIdKind) => {
+      const result = processCommentDelta({
+        observations: [
+          observation(42, {
+            sourceCommentIdKind,
+            sourceCommentId: sourceCommentIdKind === 'ABSENT' ? null : 'local-42',
+            content: '已删除',
+            deletionState: 'DELETED',
+          }),
+        ],
+        knownSnapshot: knownSnapshot([]),
+        state: state(),
+        sourceResults: [success()],
+      });
+
+      expect(result.status).toBe('REJECTED');
+      expect(result.newComments).toEqual([]);
+      expect(result.explicitDeletions).toEqual([]);
+    },
+  );
+
   test('does not advance a failed source checkpoint or cursor', () => {
     const beforeState = state();
     const failed: SourceCheckResult = {
@@ -388,6 +490,38 @@ describe('processCommentDelta', () => {
 
     expect(result.status).toBe('REJECTED');
     expect(result.newComments).toEqual([]);
+  });
+
+  test.each([
+    ['rogue source', { sourceId: 'rogue-provider', sourceVideoIdentity: 'rogue-video' }],
+    ['wrong source video', { sourceId: 'provider-a', sourceVideoIdentity: 'source-video-b' }],
+    [
+      'unregistered source for a known video alias',
+      { sourceId: 'rogue-provider', sourceVideoIdentity: 'source-video-a' },
+    ],
+  ] as const)('rejects %s observations outside the watchlist alias', (_name, overrides) => {
+    const result = processCommentDelta({
+      observations: [observation(51, overrides)],
+      knownSnapshot: knownSnapshot([]),
+      state: state(),
+      sourceResults: [success()],
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.newComments).toEqual([]);
+    expect(result.nextState).toEqual(state());
+  });
+
+  test('rejects source results for an unregistered source', () => {
+    const result = processCommentDelta({
+      observations: [],
+      knownSnapshot: knownSnapshot([]),
+      state: state(),
+      sourceResults: [success('rogue-provider')],
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.nextState).toEqual(state());
   });
 
   test('never emits forbidden downstream business fields', () => {

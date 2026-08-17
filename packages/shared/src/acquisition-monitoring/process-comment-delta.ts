@@ -15,6 +15,8 @@ const normalize = (value: string): string =>
   value.normalize('NFC').trim().replace(/\s+/gu, ' ').toLowerCase();
 const canonical = (members: readonly (readonly [string, string | null])[]): string =>
   `{${members.map(([key, value]) => `${JSON.stringify(key)}:${JSON.stringify(value)}`).join(',')}}`;
+const compareCodeUnits = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
 
 export type CommentIdentity = Readonly<{
   sourceLocalCommentIdentity: string;
@@ -27,6 +29,7 @@ export const deriveCommentIdentity = (input: CommentObservation): CommentIdentit
   const observation = commentObservationSchema.parse(input);
   const contentFingerprint = hash(normalize(observation.content));
   const weakBytes = canonical([
+    ['identityVersion', '1.0.0'],
     ['platform', observation.platform],
     ['canonicalVideoIdentity', observation.canonicalVideoIdentity],
     [
@@ -42,25 +45,29 @@ export const deriveCommentIdentity = (input: CommentObservation): CommentIdentit
     ],
   ]);
   const strong = observation.sourceCommentIdKind === 'PLATFORM_STABLE';
-  const canonicalBytes = strong
-    ? canonical([
-        ['platform', observation.platform],
-        ['canonicalVideoIdentity', observation.canonicalVideoIdentity],
-        ['sourceCommentId', observation.sourceCommentId],
-      ])
-    : weakBytes;
+  const canonicalCommentIdentity =
+    observation.deletionState === 'DELETED' && !strong
+      ? observation.priorCanonicalCommentIdentity!
+      : `cmt1_${hash(
+          strong
+            ? canonical([
+                ['identityVersion', '1.0.0'],
+                ['platform', observation.platform],
+                ['canonicalVideoIdentity', observation.canonicalVideoIdentity],
+                ['sourceCommentId', observation.sourceCommentId],
+              ])
+            : weakBytes,
+        )}`;
   const localBytes = canonical([
-    ['sourceId', observation.sourceCommentId === null ? null : observation.sourceId],
-    [
-      'sourceVideoIdentity',
-      observation.sourceCommentId === null ? null : observation.sourceVideoIdentity,
-    ],
+    ['identityVersion', '1.0.0'],
+    ['sourceId', observation.sourceId],
+    ['sourceVideoIdentity', observation.sourceVideoIdentity],
     ['sourceCommentId', observation.sourceCommentId],
     ['fallback', observation.sourceCommentId === null ? weakBytes : null],
   ]);
   return {
     sourceLocalCommentIdentity: `src_cmt1_${hash(localBytes)}`,
-    canonicalCommentIdentity: `cmt1_${hash(canonicalBytes)}`,
+    canonicalCommentIdentity,
     identityStrength: strong ? 'STRONG' : 'WEAK_FINGERPRINT',
     contentFingerprint,
   };
@@ -71,9 +78,13 @@ type AuditFact = Readonly<{
   canonicalCommentIdentity: string | null;
   sourceId: string | null;
 }>;
+type CanonicalCommentIdentity = Readonly<Omit<CommentIdentity, 'sourceLocalCommentIdentity'>>;
+type DerivedCommentObservation = Readonly<
+  CommentObservation & { sourceLocalCommentIdentity: string }
+>;
 type CommentGroup = Readonly<{
-  identity: CommentIdentity;
-  observations: readonly CommentObservation[];
+  identity: CanonicalCommentIdentity;
+  observations: readonly DerivedCommentObservation[];
 }>;
 
 export type CommentDeltaResult = Readonly<{
@@ -124,12 +135,21 @@ export const processCommentDelta = (
     return rejected(input.state);
 
   const state = stateResult.data;
+  const aliases = new Set(
+    state.sourceVideoIdentities.map(
+      (identity) => `${identity.sourceId}\0${identity.sourceVideoIdentity}\0${identity.platform}`,
+    ),
+  );
+  const registeredSources = new Set(state.sourceVideoIdentities.map(({ sourceId }) => sourceId));
   if (
     knownResult.data.videoIdentity !== state.videoIdentity ||
     observationsResult.data.some(
       (item) =>
-        item.platform !== state.platform || item.canonicalVideoIdentity !== state.videoIdentity,
-    )
+        item.platform !== state.platform ||
+        item.canonicalVideoIdentity !== state.videoIdentity ||
+        !aliases.has(`${item.sourceId}\0${item.sourceVideoIdentity}\0${item.platform}`),
+    ) ||
+    sourceResultsResult.data.some(({ sourceId }) => !registeredSources.has(sourceId))
   )
     return rejected(state);
 
@@ -141,26 +161,37 @@ export const processCommentDelta = (
   );
   const grouped = new Map<
     string,
-    { identity: CommentIdentity; observations: CommentObservation[] }
+    { observations: { identity: CommentIdentity; value: DerivedCommentObservation }[] }
   >();
   for (const item of observationsResult.data) {
     const identity = deriveCommentIdentity(item);
     const group = grouped.get(identity.canonicalCommentIdentity);
-    if (group) group.observations.push(item);
-    else grouped.set(identity.canonicalCommentIdentity, { identity, observations: [item] });
+    const value = { ...item, sourceLocalCommentIdentity: identity.sourceLocalCommentIdentity };
+    if (group) group.observations.push({ identity, value });
+    else grouped.set(identity.canonicalCommentIdentity, { observations: [{ identity, value }] });
   }
 
   const groups = [...grouped.values()]
-    .map((group) => ({
-      ...group,
-      observations: [...group.observations].sort((a, b) =>
-        `${a.sourceId}\0${a.sourceReference ?? ''}`.localeCompare(
-          `${b.sourceId}\0${b.sourceReference ?? ''}`,
+    .map((group): CommentGroup => {
+      const observations = [...group.observations].sort((a, b) =>
+        compareCodeUnits(
+          `${a.value.sourceLocalCommentIdentity}\0${a.value.sourceReference ?? ''}`,
+          `${b.value.sourceLocalCommentIdentity}\0${b.value.sourceReference ?? ''}`,
         ),
-      ),
-    }))
+      );
+      const representative = observations[0]!.identity;
+      return {
+        identity: {
+          canonicalCommentIdentity: representative.canonicalCommentIdentity,
+          identityStrength: representative.identityStrength,
+          contentFingerprint: representative.contentFingerprint,
+        },
+        observations: observations.map(({ value }) => value),
+      };
+    })
     .sort((a, b) =>
-      `${a.observations[0]?.sourceCommentId ?? ''}\0${a.identity.canonicalCommentIdentity}`.localeCompare(
+      compareCodeUnits(
+        `${a.observations[0]?.sourceCommentId ?? ''}\0${a.identity.canonicalCommentIdentity}`,
         `${b.observations[0]?.sourceCommentId ?? ''}\0${b.identity.canonicalCommentIdentity}`,
       ),
     );
@@ -207,7 +238,11 @@ export const processCommentDelta = (
     if (
       known.has(group.identity.canonicalCommentIdentity) &&
       group.observations.some((item) => item.deletionState !== 'DELETED') &&
-      known.get(group.identity.canonicalCommentIdentity) !== group.identity.contentFingerprint
+      group.observations.some(
+        (item) =>
+          item.deletionState !== 'DELETED' &&
+          known.get(group.identity.canonicalCommentIdentity) !== hash(normalize(item.content)),
+      )
     )
       auditFacts.push({
         code: 'COMMENT_EDIT_HANDLING_DEFERRED',
@@ -223,7 +258,8 @@ export const processCommentDelta = (
         sourceId: result.sourceId,
       });
   auditFacts.sort((a, b) =>
-    `${a.code}\0${a.canonicalCommentIdentity ?? ''}\0${a.sourceId ?? ''}`.localeCompare(
+    compareCodeUnits(
+      `${a.code}\0${a.canonicalCommentIdentity ?? ''}\0${a.sourceId ?? ''}`,
       `${b.code}\0${b.canonicalCommentIdentity ?? ''}\0${b.sourceId ?? ''}`,
     ),
   );

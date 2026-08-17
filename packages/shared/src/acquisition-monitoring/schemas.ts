@@ -196,6 +196,10 @@ export const commentObservationSchema = z
     occurredAt: nullableTimestampSchema,
     observedAt: timestampSchema,
     deletionState: z.enum(COMMENT_DELETION_STATES),
+    priorCanonicalCommentIdentity: z
+      .string()
+      .regex(/^cmt1_[a-f0-9]{64}$/u)
+      .nullable(),
     sourceReference: z.string().trim().min(1).max(2048).nullable(),
   })
   .strict()
@@ -205,6 +209,17 @@ export const commentObservationSchema = z
         code: z.ZodIssueCode.custom,
         path: ['sourceCommentId'],
         message: 'Comment id and id kind disagree',
+      });
+    }
+    if (
+      value.deletionState === 'DELETED' &&
+      value.sourceCommentIdKind !== 'PLATFORM_STABLE' &&
+      value.priorCanonicalCommentIdentity === null
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['priorCanonicalCommentIdentity'],
+        message: 'Weak tombstones require a prior canonical comment identity',
       });
     }
   })
