@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import {
+  convertSeedSourceArtifact,
   provenanceManifestSchema,
   seedIdentityPayloadSchema,
   seedSourceIntakeRequestSchema,
+  seedSourceIntakeResultSchema,
 } from '../src/real-estate-intent-seed';
 
 const metadata = {
@@ -110,6 +112,50 @@ describe('real-estate seed intake contracts', () => {
     );
     expect(
       seedIdentityPayloadSchema.safeParse({ ...payload, receivedAt: metadata.receivedAt }).success,
+    ).toBe(false);
+  });
+
+  test('keeps outer intake result and nested report status consistent', () => {
+    const success = convertSeedSourceArtifact({
+      sourceBytes: new TextEncoder().encode('大连买房'),
+      metadata,
+    });
+    const failure = convertSeedSourceArtifact({
+      sourceBytes: new TextEncoder().encode('大连买房'),
+      metadata: { ...metadata, repositoryStoragePermission: false },
+    });
+    expect(seedSourceIntakeResultSchema.safeParse(success).success).toBe(true);
+    expect(seedSourceIntakeResultSchema.safeParse(failure).success).toBe(true);
+    if (success.status !== 'SUCCESS' || failure.status !== 'FAILURE')
+      throw new Error('Expected valid success and failure fixtures');
+
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...failure,
+        intakeReport: { ...failure.intakeReport, status: 'SUCCESS', errorCode: null },
+      }).success,
+    ).toBe(false);
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...failure,
+        intakeReport: { ...failure.intakeReport, errorCode: null },
+      }).success,
+    ).toBe(false);
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...success,
+        intakeReport: {
+          ...success.intakeReport,
+          status: 'FAILURE',
+          errorCode: 'UNSUPPORTED_FORMAT',
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        status: 'SUCCESS',
+        intakeReport: success.intakeReport,
+      }).success,
     ).toBe(false);
   });
 });

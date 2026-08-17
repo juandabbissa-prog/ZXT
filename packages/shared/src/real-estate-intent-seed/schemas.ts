@@ -115,6 +115,16 @@ export const compileSeedCorpusInputSchema = z
     dictionary: intentDictionarySchema,
   })
   .strict()
+  .superRefine(({ corpus, dictionary }, context) => {
+    for (const field of ['market', 'locale', 'normalizationVersion'] as const) {
+      if (corpus[field] !== dictionary[field])
+        context.addIssue({
+          code: 'custom',
+          path: ['dictionary', field],
+          message: `Dictionary ${field} must match SeedCorpus ${field}`,
+        });
+    }
+  })
   .readonly();
 
 export const seedCompilationStatisticsSchema = z

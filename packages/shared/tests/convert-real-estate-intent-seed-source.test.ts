@@ -229,5 +229,18 @@ describe('controlled seed source intake', () => {
       true,
     );
     expect(first.candidates.some((candidate) => 'status' in candidate)).toBe(false);
+    for (const mismatch of [
+      { market: 'other-real-estate' },
+      { locale: 'en-US' },
+      { normalizationVersion: '9.9.9' },
+    ]) {
+      expect(() =>
+        compileSeedCorpus({
+          compilerVersion: '1.0.0',
+          corpus: intake.corpus,
+          dictionary: { ...dictionary, ...mismatch },
+        }),
+      ).toThrow();
+    }
   });
 });

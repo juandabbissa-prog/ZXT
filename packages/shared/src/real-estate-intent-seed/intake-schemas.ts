@@ -137,6 +137,20 @@ export const seedSourceIntakeSuccessSchema = z
     canonicalCorpusJson: z.string().min(1),
   })
   .strict()
+  .superRefine(({ intakeReport }, context) => {
+    if (intakeReport.status !== 'SUCCESS')
+      context.addIssue({
+        code: 'custom',
+        path: ['intakeReport', 'status'],
+        message: 'SUCCESS result requires a SUCCESS intake report',
+      });
+    if (intakeReport.errorCode !== null)
+      context.addIssue({
+        code: 'custom',
+        path: ['intakeReport', 'errorCode'],
+        message: 'SUCCESS result requires a null intake report errorCode',
+      });
+  })
   .readonly();
 
 export const seedSourceIntakeFailureSchema = z
@@ -146,6 +160,26 @@ export const seedSourceIntakeFailureSchema = z
     intakeReport: intakeReportSchema,
   })
   .strict()
+  .superRefine(({ errorCode, intakeReport }, context) => {
+    if (intakeReport.status !== 'FAILURE')
+      context.addIssue({
+        code: 'custom',
+        path: ['intakeReport', 'status'],
+        message: 'FAILURE result requires a FAILURE intake report',
+      });
+    if (intakeReport.errorCode === null)
+      context.addIssue({
+        code: 'custom',
+        path: ['intakeReport', 'errorCode'],
+        message: 'FAILURE result requires a non-null intake report errorCode',
+      });
+    else if (intakeReport.errorCode !== errorCode)
+      context.addIssue({
+        code: 'custom',
+        path: ['intakeReport', 'errorCode'],
+        message: 'FAILURE result and intake report errorCode must match',
+      });
+  })
   .readonly();
 
 export const seedSourceIntakeResultSchema = z.union([
