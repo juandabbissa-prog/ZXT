@@ -1,4 +1,5 @@
 export * from './config/env';
+export * from './acquisition-monitoring';
 export * from './domain/buyer-persona';
 export * from './domain/lead-scoring';
 export * from './errors/app-error';
