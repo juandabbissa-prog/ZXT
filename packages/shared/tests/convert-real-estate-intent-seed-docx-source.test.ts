@@ -574,10 +574,59 @@ describe('deterministic DOCX seed source intake', () => {
     );
   });
 
+  test('resolves namespaces with lexical element scope', () => {
+    const wrongRoot = `<x:document xmlns:x="urn:evil"><x:body xmlns:x="${W_NS}"><x:p><x:r><x:t>大连买房</x:t></x:r></x:p><x:p><x:r><x:t>${COZE_PROVENANCE_NOTICE}</x:t></x:r></x:p></x:body></x:document>`;
+    expectFailure(
+      convert(makeDocx('', { 'word/document.xml': strToU8(wrongRoot) })),
+      'UNSUPPORTED_DOCX_STRUCTURE',
+    );
+    const evilChild = `<w:document xmlns:w="${W_NS}"><w:body><w:p xmlns:w="urn:evil"><w:r><w:t>大连买房</w:t></w:r></w:p><w:p><w:r><w:t>${COZE_PROVENANCE_NOTICE}</w:t></w:r></w:p></w:body></w:document>`;
+    expectFailure(
+      convert(makeDocx('', { 'word/document.xml': strToU8(evilChild) })),
+      'UNSUPPORTED_DOCX_STRUCTURE',
+    );
+    const validAlias = `<w:document xmlns:w="${W_NS}"><w:body><x:p xmlns:x="${W_NS}"><x:r><x:t>大连买房</x:t></x:r></x:p><w:p><w:r><w:t>${COZE_PROVENANCE_NOTICE}</w:t></w:r></w:p></w:body></w:document>`;
+    expect(convert(makeDocx('', { 'word/document.xml': strToU8(validAlias) })).status).toBe(
+      'SUCCESS',
+    );
+    const scopedXInclude = `<w:document xmlns:w="${W_NS}" xmlns:xi="urn:safe"><w:body><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/><w:p><w:r><w:t>${COZE_PROVENANCE_NOTICE}</w:t></w:r></w:p></w:body></w:document>`;
+    expectFailure(
+      convert(makeDocx('', { 'word/document.xml': strToU8(scopedXInclude) })),
+      'UNSAFE_XML_STRUCTURE',
+    );
+  });
+
+  test('freezes sectPr as one optional empty final body element', () => {
+    const wrap = (body: string) =>
+      `<w:document xmlns:w="${W_NS}"><w:body>${body}</w:body></w:document>`;
+    const content = `${paragraph('大连买房')}${paragraph(COZE_PROVENANCE_NOTICE)}`;
+    expect(convert(makeDocx('', { 'word/document.xml': strToU8(wrap(content)) })).status).toBe(
+      'SUCCESS',
+    );
+    expect(
+      convert(makeDocx('', { 'word/document.xml': strToU8(wrap(`${content}<w:sectPr/>`)) })).status,
+    ).toBe('SUCCESS');
+    for (const invalid of [
+      `${content}<w:sectPr><w:tbl/></w:sectPr>`,
+      `${content}<w:sectPr><w:p/></w:sectPr>`,
+      `${content}<w:sectPr/><w:sectPr/>`,
+      `${paragraph('大连买房')}<w:sectPr/>${paragraph(COZE_PROVENANCE_NOTICE)}`,
+      `${content}<x:sectPr xmlns:x="urn:evil"/>`,
+    ])
+      expectFailure(
+        convert(makeDocx('', { 'word/document.xml': strToU8(wrap(invalid)) })),
+        'UNSUPPORTED_DOCX_STRUCTURE',
+      );
+    const alias = wrap(`${content}<x:sectPr xmlns:x="${W_NS}"/>`);
+    expect(convert(makeDocx('', { 'word/document.xml': strToU8(alias) })).status).toBe('SUCCESS');
+  });
+
   test('rejects contradictory success provenance and count fields', () => {
-    const result = convert(makeDocx(validBody(paragraph('大连买房'))));
+    const result = convert(makeDocx(validBody(paragraph('大连买房'), paragraph('大连购房'))));
     expect(result.status).toBe('SUCCESS');
     if (result.status !== 'SUCCESS') throw new Error('Expected success');
+    if (result.manifest.acceptedSourceFormat !== 'DOCX')
+      throw new Error('Expected DOCX provenance manifest');
     expect(
       seedSourceIntakeResultSchema.safeParse({
         ...result,
@@ -603,6 +652,61 @@ describe('deterministic DOCX seed source intake', () => {
         },
       }).success,
     ).toBe(false);
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        intakeReport: { ...result.intakeReport, itemCountValid: 1, itemCountEmpty: 1 },
+        manifest: { ...result.manifest, itemCountValid: 1, itemCountEmpty: 1 },
+      }).success,
+    ).toBe(false);
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        manifest: { ...result.manifest, sourceRecordCount: result.manifest.sourceRecordCount + 1 },
+      }).success,
+    ).toBe(false);
+    const reversedCorpus = { ...result.corpus, items: [...result.corpus.items].reverse() };
+    const reversedJson = `${JSON.stringify(reversedCorpus, null, 2)}\n`;
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        corpus: reversedCorpus,
+        canonicalCorpusJson: reversedJson,
+        manifest: {
+          ...result.manifest,
+          convertedArtifactSha256: checksumSourceArtifact(new TextEncoder().encode(reversedJson)),
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        manifest: { ...result.manifest, extractedTextArtifactSha256: 'f'.repeat(64) },
+      }).success,
+    ).toBe(false);
+    for (const corpusMutation of [
+      { corpusId: 'other-corpus' },
+      { corpusVersion: '2.0.0' },
+      { market: 'other-market' },
+      { locale: 'en-US' },
+      { normalizationVersion: '2.0.0' },
+    ]) {
+      const corpus = { ...result.corpus, ...corpusMutation };
+      const canonicalCorpusJson = `${JSON.stringify(corpus, null, 2)}\n`;
+      expect(
+        seedSourceIntakeResultSchema.safeParse({
+          ...result,
+          corpus,
+          canonicalCorpusJson,
+          manifest: {
+            ...result.manifest,
+            convertedArtifactSha256: checksumSourceArtifact(
+              new TextEncoder().encode(canonicalCorpusJson),
+            ),
+          },
+        }).success,
+      ).toBe(false);
+    }
   });
 
   test('keeps linguistic candidate identity stable across source-byte identity changes', () => {

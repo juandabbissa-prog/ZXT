@@ -4,6 +4,7 @@ import { checksumSourceArtifact } from './checksum-source-artifact';
 import {
   ACCEPTED_SOURCE_ENCODINGS,
   ACCEPTED_SOURCE_FORMATS,
+  COZE_PROVENANCE_NOTICE,
   CONTENT_ORIGINS,
   DOCX_EXTRACTION_VERSION,
   INTAKE_ERROR_CODES,
@@ -214,27 +215,69 @@ export const seedSourceIntakeSuccessSchema = z
           path: ['intakeReport', field],
           message: `Manifest and intake report ${field} must match`,
         });
-    const classifiedCount =
-      intakeReport.itemCountValid +
-      intakeReport.itemCountEmpty +
-      intakeReport.itemCountMalformed +
-      intakeReport.itemCountUnsupported +
-      intakeReport.itemCountExcludedProvenanceNotice;
-    if (
-      intakeReport.itemCountRaw !== intakeReport.records.length ||
-      classifiedCount !== intakeReport.itemCountRaw
-    )
+    const derivedCounts = {
+      itemCountRaw: intakeReport.records.length,
+      itemCountValid: intakeReport.records.filter((record) => record.status === 'VALID').length,
+      itemCountEmpty: intakeReport.records.filter((record) => record.status === 'EMPTY').length,
+      itemCountMalformed: intakeReport.records.filter((record) => record.status === 'MALFORMED')
+        .length,
+      itemCountUnsupported: intakeReport.records.filter((record) => record.status === 'UNSUPPORTED')
+        .length,
+      itemCountExcludedProvenanceNotice: intakeReport.records.filter(
+        (record) => record.status === 'SOURCE_PROVENANCE_NOTICE',
+      ).length,
+    } as const;
+    for (const field of countFields)
+      if (intakeReport[field] !== derivedCounts[field] || manifest[field] !== derivedCounts[field])
+        context.addIssue({
+          code: 'custom',
+          path: ['intakeReport', field],
+          message: `${field} must be derived from intake records`,
+        });
+    if (intakeReport.itemCountRaw !== intakeReport.records.length)
       context.addIssue({
         code: 'custom',
         path: ['intakeReport', 'itemCountRaw'],
-        message: 'Intake counts must exactly classify all records',
+        message: 'Raw item count must equal intake record count',
       });
-    if (corpus.items.length !== intakeReport.records.filter((record) => record.included).length)
+    const includedRecords = intakeReport.records.filter((record) => record.included);
+    if (corpus.items.length !== includedRecords.length)
       context.addIssue({
         code: 'custom',
         path: ['corpus', 'items'],
         message: 'Corpus items must match included intake records',
       });
+    for (const [index, record] of intakeReport.records.entries()) {
+      if (record.originalOrder !== index)
+        context.addIssue({
+          code: 'custom',
+          path: ['intakeReport', 'records', index, 'originalOrder'],
+          message: 'SUCCESS records must preserve contiguous source order',
+        });
+      const validShape =
+        (record.status === 'VALID' &&
+          record.included &&
+          record.rawText !== null &&
+          record.rawText.length > 0 &&
+          record.errorCode === null &&
+          record.reason === null) ||
+        (record.status === 'EMPTY' &&
+          record.included &&
+          record.rawText === '' &&
+          record.errorCode === null &&
+          record.reason === null) ||
+        (record.status === 'SOURCE_PROVENANCE_NOTICE' &&
+          !record.included &&
+          record.rawText === COZE_PROVENANCE_NOTICE &&
+          record.errorCode === null &&
+          record.reason !== null);
+      if (!validShape)
+        context.addIssue({
+          code: 'custom',
+          path: ['intakeReport', 'records', index],
+          message: 'SUCCESS record status and fields are inconsistent',
+        });
+    }
     if (
       manifest.sourceArtifactId !== intakeReport.sourceArtifactId ||
       manifest.sourceArtifactSha256 !== intakeReport.sourceArtifactSha256
@@ -271,14 +314,64 @@ export const seedSourceIntakeSuccessSchema = z
         message: 'Canonical corpus JSON must serialize the corpus exactly',
       });
     if (
-      manifest.acceptedSourceFormat === 'DOCX' &&
-      manifest.sourceRecordCount !== intakeReport.itemCountRaw
+      corpus.corpusId !== manifest.corpusId ||
+      corpus.corpusVersion !== manifest.corpusVersion ||
+      corpus.market !== manifest.compilerMarket ||
+      corpus.locale !== manifest.locale ||
+      corpus.normalizationVersion !== manifest.normalizationVersion
     )
       context.addIssue({
         code: 'custom',
-        path: ['manifest', 'sourceRecordCount'],
-        message: 'DOCX sourceRecordCount must equal raw paragraph count',
+        path: ['corpus'],
+        message: 'Corpus metadata must match the provenance manifest',
       });
+    const occurrenceOrdinals = new Map<string, number>();
+    for (const [index, item] of corpus.items.entries()) {
+      const record = includedRecords[index];
+      if (!record || record.rawText === null) continue;
+      const ordinal = occurrenceOrdinals.get(record.rawText) ?? 0;
+      occurrenceOrdinals.set(record.rawText, ordinal + 1);
+      const identityPayload = {
+        seedIdentityVersion: SEED_IDENTITY_VERSION,
+        sourceArtifactId: manifest.sourceArtifactId,
+        sourceArtifactSha256: manifest.sourceArtifactSha256,
+        rawText: record.rawText,
+        sourceOccurrenceOrdinalAmongIdenticalRawText: ordinal,
+      };
+      const expectedSeedId = `seed1_${checksumSourceArtifact(
+        new TextEncoder().encode(JSON.stringify(identityPayload)),
+      )}`;
+      if (
+        item.rawText !== record.rawText ||
+        item.originalOrder !== record.originalOrder ||
+        item.seedId !== expectedSeedId ||
+        item.provenance.sourceArtifactId !== manifest.sourceArtifactId ||
+        item.provenance.sourceReference !== manifest.sourceReference ||
+        item.provenance.generationMethod !== manifest.generationMethod
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['corpus', 'items', index],
+          message: 'Corpus item must be provenance-bound to its included source record',
+        });
+    }
+    if (manifest.acceptedSourceFormat === 'DOCX') {
+      if (manifest.sourceRecordCount !== intakeReport.records.length)
+        context.addIssue({
+          code: 'custom',
+          path: ['manifest', 'sourceRecordCount'],
+          message: 'DOCX sourceRecordCount must equal source record count',
+        });
+      const extractedTextBytes = new TextEncoder().encode(
+        `${JSON.stringify(intakeReport.records.map((record) => record.rawText))}\n`,
+      );
+      if (manifest.extractedTextArtifactSha256 !== checksumSourceArtifact(extractedTextBytes))
+        context.addIssue({
+          code: 'custom',
+          path: ['manifest', 'extractedTextArtifactSha256'],
+          message: 'DOCX extracted text checksum must match ordered source records',
+        });
+    }
   })
   .readonly();
 

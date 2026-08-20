@@ -196,26 +196,19 @@ const elementEntries = (node: OrderedXmlNode): [string, unknown[]][] =>
       entry[0] !== ':@' && !entry[0].startsWith('?') && Array.isArray(entry[1]),
   );
 
-const namespaceMap = (nodes: readonly unknown[]): ReadonlyMap<string, string> => {
-  const namespaces = new Map<string, string>();
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
+const namespaceEnvironment = (
+  node: OrderedXmlNode,
+  parent: ReadonlyMap<string, string>,
+): ReadonlyMap<string, string> => {
+  const namespaces = new Map(parent);
+  const attributes = node[':@'];
+  if (attributes && typeof attributes === 'object')
+    for (const [name, attributeValue] of Object.entries(attributes as OrderedXmlNode)) {
+      if (typeof attributeValue !== 'string') continue;
+      const decodedValue = decodeXmlCharacterReferences(attributeValue);
+      if (name === '@_xmlns') namespaces.set('', decodedValue);
+      else if (name.startsWith('@_xmlns:')) namespaces.set(name.slice(8), decodedValue);
     }
-    if (value === null || typeof value !== 'object') return;
-    const node = value as OrderedXmlNode;
-    const attributes = node[':@'];
-    if (attributes && typeof attributes === 'object')
-      for (const [name, attributeValue] of Object.entries(attributes as OrderedXmlNode)) {
-        if (typeof attributeValue !== 'string') continue;
-        const decodedValue = decodeXmlCharacterReferences(attributeValue);
-        if (name === '@_xmlns') namespaces.set('', decodedValue);
-        else if (name.startsWith('@_xmlns:')) namespaces.set(name.slice(8), decodedValue);
-      }
-    Object.entries(node).forEach(([key, child]) => key !== ':@' && visit(child));
-  };
-  visit(nodes);
   return namespaces;
 };
 
@@ -233,73 +226,108 @@ const semanticName = (
 
 const containsXInclude = (
   nodes: readonly unknown[],
-  namespaces: ReadonlyMap<string, string>,
+  parentNamespaces: ReadonlyMap<string, string> = new Map(),
 ): boolean => {
-  const visit = (value: unknown): boolean => {
-    if (Array.isArray(value)) return value.some(visit);
+  const visit = (value: unknown, inherited: ReadonlyMap<string, string>): boolean => {
+    if (Array.isArray(value)) return value.some((child) => visit(child, inherited));
     if (value === null || typeof value !== 'object') return false;
-    return elementEntries(value as OrderedXmlNode).some(([name, children]) => {
+    const node = value as OrderedXmlNode;
+    const namespaces = namespaceEnvironment(node, inherited);
+    return elementEntries(node).some(([name, children]) => {
       const semantic = semanticName(name, namespaces);
       return (
         (semantic.namespace === XINCLUDE_NAMESPACE &&
           (semantic.localName === 'include' || semantic.localName === 'fallback')) ||
-        visit(children)
+        visit(children, namespaces)
       );
     });
   };
-  return visit(nodes);
+  return visit(nodes, parentNamespaces);
+};
+
+const singleElement = (
+  values: readonly unknown[],
+  parentNamespaces: ReadonlyMap<string, string>,
+): {
+  readonly name: string;
+  readonly children: readonly unknown[];
+  readonly namespaces: ReadonlyMap<string, string>;
+} | null => {
+  const elements = values.flatMap((value) => {
+    if (value === null || typeof value !== 'object') return [];
+    const node = value as OrderedXmlNode;
+    const namespaces = namespaceEnvironment(node, parentNamespaces);
+    return elementEntries(node).map(([name, children]) => ({ name, children, namespaces }));
+  });
+  return elements.length === 1 ? elements[0]! : null;
 };
 
 const parseParagraphs = (documentXml: string): readonly string[] | null => {
   const parsed = xmlParser.parse(documentXml) as OrderedXmlNode[];
-  const namespaces = namespaceMap(parsed);
-  if (containsXInclude(parsed, namespaces)) return null;
-  const roots = parsed.flatMap(elementEntries);
-  if (roots.length !== 1) return null;
-  const [rootName, documentChildren] = roots[0]!;
-  const root = semanticName(rootName, namespaces);
+  if (containsXInclude(parsed)) return null;
+  const rootElement = singleElement(parsed, new Map());
+  if (!rootElement) return null;
+  const root = semanticName(rootElement.name, rootElement.namespaces);
   if (root.namespace !== WORDPROCESSINGML_NAMESPACE || root.localName !== 'document') return null;
-  const bodyEntries = documentChildren.flatMap((value) =>
-    value !== null && typeof value === 'object' ? elementEntries(value as OrderedXmlNode) : [],
-  );
-  if (bodyEntries.length !== 1) return null;
-  const [bodyName, bodyChildren] = bodyEntries[0]!;
-  const body = semanticName(bodyName, namespaces);
+  const bodyElement = singleElement(rootElement.children, rootElement.namespaces);
+  if (!bodyElement) return null;
+  const body = semanticName(bodyElement.name, bodyElement.namespaces);
   if (body.namespace !== WORDPROCESSINGML_NAMESPACE || body.localName !== 'body') return null;
 
   const paragraphs: string[] = [];
-  for (const value of bodyChildren) {
-    if (value === null || typeof value !== 'object') continue;
-    for (const [name, paragraphChildren] of elementEntries(value as OrderedXmlNode)) {
-      const element = semanticName(name, namespaces);
-      if (element.namespace !== WORDPROCESSINGML_NAMESPACE) return null;
-      if (element.localName === 'sectPr') continue;
-      if (element.localName !== 'p') return null;
-      const parts: string[] = [];
-      for (const runValue of paragraphChildren) {
-        if (runValue === null || typeof runValue !== 'object') continue;
-        for (const [runName, runChildren] of elementEntries(runValue as OrderedXmlNode)) {
-          const run = semanticName(runName, namespaces);
-          if (run.namespace !== WORDPROCESSINGML_NAMESPACE || run.localName !== 'r') return null;
-          for (const textValue of runChildren) {
-            if (textValue === null || typeof textValue !== 'object') continue;
-            for (const [textName, textChildren] of elementEntries(textValue as OrderedXmlNode)) {
-              const text = semanticName(textName, namespaces);
-              if (text.namespace !== WORDPROCESSINGML_NAMESPACE || text.localName !== 't')
-                return null;
-              for (const child of textChildren)
-                if (
-                  child !== null &&
-                  typeof child === 'object' &&
-                  typeof (child as OrderedXmlNode)['#text'] === 'string'
-                )
-                  parts.push((child as OrderedXmlNode)['#text'] as string);
-            }
-          }
+  const bodyElements = bodyElement.children.flatMap((value) => {
+    if (value === null || typeof value !== 'object') return [];
+    const node = value as OrderedXmlNode;
+    const namespaces = namespaceEnvironment(node, bodyElement.namespaces);
+    return elementEntries(node).map(([name, children]) => ({ name, children, namespaces }));
+  });
+  for (const [elementIndex, bodyChild] of bodyElements.entries()) {
+    const element = semanticName(bodyChild.name, bodyChild.namespaces);
+    if (element.namespace !== WORDPROCESSINGML_NAMESPACE) return null;
+    if (element.localName === 'sectPr') {
+      if (
+        elementIndex !== bodyElements.length - 1 ||
+        bodyChild.children.some(
+          (child) =>
+            child !== null &&
+            typeof child === 'object' &&
+            elementEntries(child as OrderedXmlNode).length > 0,
+        )
+      )
+        return null;
+      continue;
+    }
+    if (element.localName !== 'p') return null;
+    const parts: string[] = [];
+    for (const runValue of bodyChild.children) {
+      if (runValue === null || typeof runValue !== 'object') continue;
+      const runNode = runValue as OrderedXmlNode;
+      const runNamespaces = namespaceEnvironment(runNode, bodyChild.namespaces);
+      const runs = elementEntries(runNode);
+      if (runs.length === 0) continue;
+      if (runs.length !== 1) return null;
+      const [runName, runChildren] = runs[0]!;
+      const run = semanticName(runName, runNamespaces);
+      if (run.namespace !== WORDPROCESSINGML_NAMESPACE || run.localName !== 'r') return null;
+      for (const textValue of runChildren) {
+        if (textValue === null || typeof textValue !== 'object') continue;
+        const textNode = textValue as OrderedXmlNode;
+        const textNamespaces = namespaceEnvironment(textNode, runNamespaces);
+        const texts = elementEntries(textNode);
+        if (texts.length === 0) continue;
+        if (texts.length !== 1) return null;
+        const [textName, textChildren] = texts[0]!;
+        const text = semanticName(textName, textNamespaces);
+        if (text.namespace !== WORDPROCESSINGML_NAMESPACE || text.localName !== 't') return null;
+        for (const child of textChildren) {
+          if (child === null || typeof child !== 'object') continue;
+          if (elementEntries(child as OrderedXmlNode).length > 0) return null;
+          if (typeof (child as OrderedXmlNode)['#text'] === 'string')
+            parts.push((child as OrderedXmlNode)['#text'] as string);
         }
       }
-      paragraphs.push(parts.join(''));
     }
+    paragraphs.push(parts.join(''));
   }
   return paragraphs;
 };
@@ -472,7 +500,7 @@ export const extractDocxSeedRecords = (sourceBytes: Uint8Array): DocxExtractionR
   if (!paragraphRawTexts) {
     try {
       const parsed = xmlParser.parse(documentXml) as OrderedXmlNode[];
-      if (containsXInclude(parsed, namespaceMap(parsed)))
+      if (containsXInclude(parsed))
         return failure('UNSAFE_XML_STRUCTURE', 'DOCX XML contains an XInclude construct');
     } catch {
       return failure('MALFORMED_DOCUMENT_XML', 'DOCX word/document.xml could not be traversed');
