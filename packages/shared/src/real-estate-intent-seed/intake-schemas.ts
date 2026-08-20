@@ -356,6 +356,12 @@ export const seedSourceIntakeSuccessSchema = z
         });
     }
     if (manifest.acceptedSourceFormat === 'DOCX') {
+      if (derivedCounts.itemCountExcludedProvenanceNotice !== 1)
+        context.addIssue({
+          code: 'custom',
+          path: ['intakeReport', 'records'],
+          message: 'DOCX SUCCESS requires exactly one frozen provenance notice record',
+        });
       if (manifest.sourceRecordCount !== intakeReport.records.length)
         context.addIssue({
           code: 'custom',

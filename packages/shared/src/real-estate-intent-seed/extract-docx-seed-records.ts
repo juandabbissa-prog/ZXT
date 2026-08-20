@@ -262,6 +262,15 @@ const singleElement = (
   return elements.length === 1 ? elements[0]! : null;
 };
 
+const hasNonWhitespaceDirectText = (values: readonly unknown[]): boolean =>
+  values.some(
+    (value) =>
+      value !== null &&
+      typeof value === 'object' &&
+      typeof (value as OrderedXmlNode)['#text'] === 'string' &&
+      ((value as OrderedXmlNode)['#text'] as string).trim().length > 0,
+  );
+
 const parseParagraphs = (documentXml: string): readonly string[] | null => {
   const parsed = xmlParser.parse(documentXml) as OrderedXmlNode[];
   if (containsXInclude(parsed)) return null;
@@ -269,10 +278,12 @@ const parseParagraphs = (documentXml: string): readonly string[] | null => {
   if (!rootElement) return null;
   const root = semanticName(rootElement.name, rootElement.namespaces);
   if (root.namespace !== WORDPROCESSINGML_NAMESPACE || root.localName !== 'document') return null;
+  if (hasNonWhitespaceDirectText(rootElement.children)) return null;
   const bodyElement = singleElement(rootElement.children, rootElement.namespaces);
   if (!bodyElement) return null;
   const body = semanticName(bodyElement.name, bodyElement.namespaces);
   if (body.namespace !== WORDPROCESSINGML_NAMESPACE || body.localName !== 'body') return null;
+  if (hasNonWhitespaceDirectText(bodyElement.children)) return null;
 
   const paragraphs: string[] = [];
   const bodyElements = bodyElement.children.flatMap((value) => {
@@ -287,6 +298,7 @@ const parseParagraphs = (documentXml: string): readonly string[] | null => {
     if (element.localName === 'sectPr') {
       if (
         elementIndex !== bodyElements.length - 1 ||
+        hasNonWhitespaceDirectText(bodyChild.children) ||
         bodyChild.children.some(
           (child) =>
             child !== null &&
@@ -298,6 +310,7 @@ const parseParagraphs = (documentXml: string): readonly string[] | null => {
       continue;
     }
     if (element.localName !== 'p') return null;
+    if (hasNonWhitespaceDirectText(bodyChild.children)) return null;
     const parts: string[] = [];
     for (const runValue of bodyChild.children) {
       if (runValue === null || typeof runValue !== 'object') continue;
@@ -309,6 +322,7 @@ const parseParagraphs = (documentXml: string): readonly string[] | null => {
       const [runName, runChildren] = runs[0]!;
       const run = semanticName(runName, runNamespaces);
       if (run.namespace !== WORDPROCESSINGML_NAMESPACE || run.localName !== 'r') return null;
+      if (hasNonWhitespaceDirectText(runChildren)) return null;
       for (const textValue of runChildren) {
         if (textValue === null || typeof textValue !== 'object') continue;
         const textNode = textValue as OrderedXmlNode;

@@ -621,6 +621,41 @@ describe('deterministic DOCX seed source intake', () => {
     expect(convert(makeDocx('', { 'word/document.xml': strToU8(alias) })).status).toBe('SUCCESS');
   });
 
+  test('rejects non-whitespace direct text in structural elements and preserves w:t text', () => {
+    const wrap = (body: string, documentText = '') =>
+      `<w:document xmlns:w="${W_NS}">${documentText}<w:body>${body}</w:body></w:document>`;
+    const content = `${paragraph('大连买房')}${paragraph(COZE_PROVENANCE_NOTICE)}`;
+    const invalidDocuments = [
+      wrap(content, 'HIDDEN'),
+      wrap(`HIDDEN${content}`),
+      wrap(`<w:p>HIDDEN<w:r><w:t>大连买房</w:t></w:r></w:p>${paragraph(COZE_PROVENANCE_NOTICE)}`),
+      wrap(`<w:p><w:r>HIDDEN<w:t>大连买房</w:t></w:r></w:p>${paragraph(COZE_PROVENANCE_NOTICE)}`),
+      wrap(`${content}<w:sectPr>HIDDEN</w:sectPr>`),
+    ];
+    for (const xml of invalidDocuments)
+      expectFailure(
+        convert(makeDocx('', { 'word/document.xml': strToU8(xml) })),
+        'UNSUPPORTED_DOCX_STRUCTURE',
+      );
+
+    const whitespaceOnly = `<w:document xmlns:w="${W_NS}">
+  <w:body>
+    <w:p>
+      <w:r>
+        <w:t xml:space="preserve">  大连买房  </w:t>
+      </w:r>
+    </w:p>
+    ${paragraph(COZE_PROVENANCE_NOTICE)}
+    <w:sectPr>
+    </w:sectPr>
+  </w:body>
+</w:document>`;
+    const accepted = convert(makeDocx('', { 'word/document.xml': strToU8(whitespaceOnly) }));
+    expect(accepted.status).toBe('SUCCESS');
+    if (accepted.status !== 'SUCCESS') throw new Error('Expected structural whitespace success');
+    expect(accepted.corpus.items[0]?.rawText).toBe('  大连买房  ');
+  });
+
   test('rejects contradictory success provenance and count fields', () => {
     const result = convert(makeDocx(validBody(paragraph('大连买房'), paragraph('大连购房'))));
     expect(result.status).toBe('SUCCESS');
@@ -707,6 +742,82 @@ describe('deterministic DOCX seed source intake', () => {
         }).success,
       ).toBe(false);
     }
+  });
+
+  test('requires exactly one frozen provenance notice for DOCX SUCCESS', () => {
+    const result = convert(makeDocx(validBody(paragraph('大连买房'), paragraph(''))));
+    expect(result.status).toBe('SUCCESS');
+    if (result.status !== 'SUCCESS') throw new Error('Expected success');
+    if (result.manifest.acceptedSourceFormat !== 'DOCX')
+      throw new Error('Expected DOCX provenance manifest');
+    const notice = result.intakeReport.records.find(
+      (record) => record.status === 'SOURCE_PROVENANCE_NOTICE',
+    );
+    if (!notice) throw new Error('Expected provenance notice');
+    const extractedHash = (records: typeof result.intakeReport.records) =>
+      checksumSourceArtifact(
+        new TextEncoder().encode(`${JSON.stringify(records.map((record) => record.rawText))}\n`),
+      );
+
+    const withoutNotice = result.intakeReport.records.filter(
+      (record) => record.status !== 'SOURCE_PROVENANCE_NOTICE',
+    );
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        intakeReport: {
+          ...result.intakeReport,
+          records: withoutNotice,
+          itemCountRaw: withoutNotice.length,
+          itemCountExcludedProvenanceNotice: 0,
+        },
+        manifest: {
+          ...result.manifest,
+          itemCountRaw: withoutNotice.length,
+          itemCountExcludedProvenanceNotice: 0,
+          sourceRecordCount: withoutNotice.length,
+          extractedTextArtifactSha256: extractedHash(withoutNotice),
+        },
+      }).success,
+    ).toBe(false);
+
+    for (const mutatedNotice of [
+      { ...notice, status: 'VALID' as const },
+      { ...notice, included: true },
+      { ...notice, rawText: `${COZE_PROVENANCE_NOTICE}近似` },
+    ]) {
+      const records = result.intakeReport.records.map((record) =>
+        record.originalOrder === notice.originalOrder ? mutatedNotice : record,
+      );
+      expect(
+        seedSourceIntakeResultSchema.safeParse({
+          ...result,
+          intakeReport: { ...result.intakeReport, records },
+        }).success,
+      ).toBe(false);
+    }
+
+    const duplicateNotice = { ...notice, originalOrder: result.intakeReport.records.length };
+    const duplicatedRecords = [...result.intakeReport.records, duplicateNotice];
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        intakeReport: {
+          ...result.intakeReport,
+          records: duplicatedRecords,
+          itemCountRaw: duplicatedRecords.length,
+          itemCountExcludedProvenanceNotice: 2,
+        },
+        manifest: {
+          ...result.manifest,
+          itemCountRaw: duplicatedRecords.length,
+          itemCountExcludedProvenanceNotice: 2,
+          sourceRecordCount: duplicatedRecords.length,
+          extractedTextArtifactSha256: extractedHash(duplicatedRecords),
+        },
+      }).success,
+    ).toBe(false);
+    expect(seedSourceIntakeResultSchema.safeParse(result).success).toBe(true);
   });
 
   test('keeps linguistic candidate identity stable across source-byte identity changes', () => {
