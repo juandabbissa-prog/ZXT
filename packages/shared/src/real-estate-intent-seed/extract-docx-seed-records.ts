@@ -1,4 +1,4 @@
-import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate';
+import { UnzipInflate, UnzipPassThrough } from 'fflate';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { checksumSourceArtifact } from './checksum-source-artifact';
 import {
@@ -37,6 +37,7 @@ type CentralEntry = {
   readonly localHeaderOffset: number;
   readonly dataStart: number;
   readonly dataEnd: number;
+  readonly physicalEnd: number;
 };
 
 type OrderedXmlNode = Record<string, unknown>;
@@ -47,6 +48,201 @@ const CENTRAL_FILE_SIGNATURE = 0x02014b50;
 const LOCAL_FILE_SIGNATURE = 0x04034b50;
 const WORDPROCESSINGML_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const XINCLUDE_NAMESPACE = 'http://www.w3.org/2001/XInclude';
+const DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
+
+const updateCrc32 = (state: number, bytes: Uint8Array): number => {
+  let value = state;
+  for (const byte of bytes) {
+    value ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+  }
+  return value >>> 0;
+};
+
+class DeflateBits {
+  private bitOffset = 0;
+
+  constructor(private readonly bytes: Uint8Array) {}
+
+  read(count: number): number {
+    if (count < 0 || count > 16 || this.bitOffset + count > this.bytes.byteLength * 8)
+      throw new Error('Truncated DEFLATE stream');
+    let value = 0;
+    for (let bit = 0; bit < count; bit += 1) {
+      const offset = this.bitOffset + bit;
+      value |= ((this.bytes[offset >>> 3]! >>> (offset & 7)) & 1) << bit;
+    }
+    this.bitOffset += count;
+    return value;
+  }
+
+  align(): void {
+    this.bitOffset = (this.bitOffset + 7) & ~7;
+  }
+
+  get byteOffset(): number {
+    return Math.ceil(this.bitOffset / 8);
+  }
+}
+
+type Huffman = {
+  readonly byLength: readonly ReadonlyMap<number, number>[];
+  readonly maxBits: number;
+};
+
+const reverseBits = (value: number, length: number): number => {
+  let reversed = 0;
+  for (let bit = 0; bit < length; bit += 1) reversed = (reversed << 1) | ((value >>> bit) & 1);
+  return reversed;
+};
+
+const buildHuffman = (lengths: readonly number[]): Huffman => {
+  const maxBits = Math.max(0, ...lengths);
+  if (maxBits > 15) throw new Error('Invalid DEFLATE Huffman code length');
+  const counts = new Array<number>(maxBits + 1).fill(0);
+  for (const length of lengths) {
+    if (!Number.isInteger(length) || length < 0 || length > 15)
+      throw new Error('Invalid DEFLATE Huffman code length');
+    if (length > 0) counts[length] = (counts[length] ?? 0) + 1;
+  }
+  let available = 1;
+  for (let length = 1; length <= maxBits; length += 1) {
+    available = available * 2 - (counts[length] ?? 0);
+    if (available < 0) throw new Error('Oversubscribed DEFLATE Huffman tree');
+  }
+  const nextCode = new Array<number>(maxBits + 1).fill(0);
+  let code = 0;
+  for (let length = 1; length <= maxBits; length += 1) {
+    code = (code + (counts[length - 1] ?? 0)) << 1;
+    nextCode[length] = code;
+  }
+  const byLength = Array.from({ length: maxBits + 1 }, () => new Map<number, number>());
+  lengths.forEach((length, symbol) => {
+    if (length === 0) return;
+    const canonical = nextCode[length]!;
+    nextCode[length] = canonical + 1;
+    byLength[length]!.set(reverseBits(canonical, length), symbol);
+  });
+  return { byLength, maxBits };
+};
+
+const decodeHuffman = (bits: DeflateBits, huffman: Huffman): number => {
+  let code = 0;
+  for (let length = 1; length <= huffman.maxBits; length += 1) {
+    code |= bits.read(1) << (length - 1);
+    const symbol = huffman.byLength[length]?.get(code);
+    if (symbol !== undefined) return symbol;
+  }
+  throw new Error('Invalid DEFLATE Huffman symbol');
+};
+
+const fixedLiteralLengths = Array.from({ length: 288 }, (_unused, symbol) =>
+  symbol <= 143 ? 8 : symbol <= 255 ? 9 : symbol <= 279 ? 7 : 8,
+);
+const fixedDistanceLengths = new Array<number>(32).fill(5);
+const codeLengthOrder = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+const lengthBases = [
+  3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131,
+  163, 195, 227, 258,
+];
+const lengthExtra = [
+  0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
+];
+const distanceBases = [
+  1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049,
+  3073, 4097, 6145, 8193, 12289, 16385, 24577,
+];
+const distanceExtra = [
+  0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13,
+];
+
+const dynamicHuffman = (bits: DeflateBits): readonly [Huffman, Huffman] => {
+  const literalCount = bits.read(5) + 257;
+  const distanceCount = bits.read(5) + 1;
+  const codeLengthCount = bits.read(4) + 4;
+  const codeLengths = new Array<number>(19).fill(0);
+  for (let index = 0; index < codeLengthCount; index += 1)
+    codeLengths[codeLengthOrder[index]!] = bits.read(3);
+  const codeLengthHuffman = buildHuffman(codeLengths);
+  if (codeLengthHuffman.maxBits === 0) throw new Error('Empty DEFLATE code-length tree');
+  const lengths: number[] = [];
+  const expected = literalCount + distanceCount;
+  while (lengths.length < expected) {
+    const symbol = decodeHuffman(bits, codeLengthHuffman);
+    if (symbol <= 15) lengths.push(symbol);
+    else if (symbol === 16) {
+      if (lengths.length === 0) throw new Error('DEFLATE repeat has no previous code length');
+      const repeat = bits.read(2) + 3;
+      if (lengths.length + repeat > expected)
+        throw new Error('DEFLATE code-length repeat overflow');
+      lengths.push(...new Array<number>(repeat).fill(lengths.at(-1)!));
+    } else if (symbol === 17 || symbol === 18) {
+      const repeat = bits.read(symbol === 17 ? 3 : 7) + (symbol === 17 ? 3 : 11);
+      if (lengths.length + repeat > expected) throw new Error('DEFLATE zero repeat overflow');
+      lengths.push(...new Array<number>(repeat).fill(0));
+    } else throw new Error('Invalid DEFLATE code-length symbol');
+  }
+  const literalLengths = lengths.slice(0, literalCount);
+  if (!literalLengths[256]) throw new Error('DEFLATE literal tree has no end-of-block symbol');
+  return [buildHuffman(literalLengths), buildHuffman(lengths.slice(literalCount))];
+};
+
+const rawDeflateTerminalBytes = (bytes: Uint8Array): number => {
+  const bits = new DeflateBits(bytes);
+  let outputBytes = 0;
+  let final = 0;
+  while (!final) {
+    final = bits.read(1);
+    const blockType = bits.read(2);
+    if (blockType === 0) {
+      bits.align();
+      const length = bits.read(16);
+      const inverse = bits.read(16);
+      if (((length ^ 0xffff) & 0xffff) !== inverse) throw new Error('Invalid DEFLATE LEN/NLEN');
+      for (let index = 0; index < length; index += 1) bits.read(8);
+      outputBytes += length;
+      continue;
+    }
+    if (blockType === 3) throw new Error('Reserved DEFLATE block type');
+    const [literalHuffman, distanceHuffman] =
+      blockType === 1
+        ? [buildHuffman(fixedLiteralLengths), buildHuffman(fixedDistanceLengths)]
+        : dynamicHuffman(bits);
+    for (;;) {
+      const symbol = decodeHuffman(bits, literalHuffman);
+      if (symbol < 256) {
+        outputBytes += 1;
+        continue;
+      }
+      if (symbol === 256) break;
+      if (symbol < 257 || symbol > 285) throw new Error('Invalid DEFLATE length symbol');
+      const lengthIndex = symbol - 257;
+      const matchLength = lengthBases[lengthIndex]! + bits.read(lengthExtra[lengthIndex]!);
+      const distanceSymbol = decodeHuffman(bits, distanceHuffman);
+      if (distanceSymbol > 29) throw new Error('Invalid DEFLATE distance symbol');
+      const distance = distanceBases[distanceSymbol]! + bits.read(distanceExtra[distanceSymbol]!);
+      if (distance < 1 || distance > outputBytes)
+        throw new Error('Invalid DEFLATE backward distance');
+      outputBytes += matchLength;
+    }
+  }
+  return bits.byteOffset;
+};
+
+const containsZip64Extra = (bytes: Uint8Array, offset: number, length: number): boolean => {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const end = offset + length;
+  while (offset < end) {
+    if (offset + 4 > end) throw new Error('Malformed ZIP extra field');
+    const id = view.getUint16(offset, true);
+    const size = view.getUint16(offset + 2, true);
+    offset += 4;
+    if (offset + size > end) throw new Error('Malformed ZIP extra field');
+    if (id === 1) return true;
+    offset += size;
+  }
+  return false;
+};
 
 const decodeXmlCharacterReferences = (value: string): string =>
   value.replace(
@@ -129,33 +325,46 @@ const readCentralDirectory = (sourceBytes: Uint8Array): CentralEntry[] => {
       localHeaderOffset === 0xffffffff
     )
       throw new Error('ZIP64 entries are not supported');
-    const name = decoder.decode(sourceBytes.subarray(offset + 46, offset + 46 + nameLength));
+    const centralNameBytes = sourceBytes.subarray(offset + 46, offset + 46 + nameLength);
+    const centralExtraOffset = offset + 46 + nameLength;
+    if (containsZip64Extra(sourceBytes, centralExtraOffset, extraLength))
+      throw new Error('ZIP64 extra fields are not supported');
+    const name = decoder.decode(centralNameBytes);
     const normalizedName = safeZipLogicalName(name);
     if (localHeaderOffset + 30 > centralOffset) throw new Error('Invalid local ZIP header offset');
     if (view.getUint32(localHeaderOffset, true) !== LOCAL_FILE_SIGNATURE)
       throw new Error('Invalid local ZIP header');
     const localFlags = view.getUint16(localHeaderOffset + 6, true);
     const localMethod = view.getUint16(localHeaderOffset + 8, true);
-    if ((flags & 8) !== 0) throw new Error('ZIP data descriptors are not supported');
     const localCrc32 = view.getUint32(localHeaderOffset + 14, true);
     const localCompressedSize = view.getUint32(localHeaderOffset + 18, true);
     const localUncompressedSize = view.getUint32(localHeaderOffset + 22, true);
     const localNameLength = view.getUint16(localHeaderOffset + 26, true);
     const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+    const localNameOffset = localHeaderOffset + 30;
+    const localExtraOffset = localNameOffset + localNameLength;
+    if (localExtraOffset + localExtraLength > centralOffset)
+      throw new Error('Invalid local ZIP header fields');
+    if (containsZip64Extra(sourceBytes, localExtraOffset, localExtraLength))
+      throw new Error('ZIP64 extra fields are not supported');
     const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
     const dataEnd = dataStart + compressedSize;
     if (dataStart > centralOffset || dataEnd > centralOffset)
       throw new Error('Invalid ZIP entry data bounds');
-    const localName = decoder.decode(
-      sourceBytes.subarray(localHeaderOffset + 30, localHeaderOffset + 30 + localNameLength),
-    );
+    const localNameBytes = sourceBytes.subarray(localNameOffset, localNameOffset + localNameLength);
+    const sameRawName =
+      localNameBytes.byteLength === centralNameBytes.byteLength &&
+      localNameBytes.every((value, index) => value === centralNameBytes[index]);
+    const descriptorMode = (flags & 8) !== 0;
     if (
       localFlags !== flags ||
       localMethod !== compressionMethod ||
-      localCrc32 !== crc32 ||
-      localCompressedSize !== compressedSize ||
-      localUncompressedSize !== uncompressedSize ||
-      localName !== name
+      !sameRawName ||
+      (descriptorMode
+        ? localCrc32 !== 0 || localCompressedSize !== 0 || localUncompressedSize !== 0
+        : localCrc32 !== crc32 ||
+          localCompressedSize !== compressedSize ||
+          localUncompressedSize !== uncompressedSize)
     )
       throw new Error('ZIP local and central headers disagree');
     entries.push({
@@ -169,6 +378,7 @@ const readCentralDirectory = (sourceBytes: Uint8Array): CentralEntry[] => {
       localHeaderOffset,
       dataStart,
       dataEnd,
+      physicalEnd: dataEnd,
     });
     offset = nextOffset;
   }
@@ -176,10 +386,35 @@ const readCentralDirectory = (sourceBytes: Uint8Array): CentralEntry[] => {
   const ranges = [...entries].sort(
     (left, right) => left.localHeaderOffset - right.localHeaderOffset,
   );
-  for (let index = 1; index < ranges.length; index += 1)
-    if (ranges[index]!.localHeaderOffset < ranges[index - 1]!.dataEnd)
-      throw new Error('Overlapping ZIP entry ranges');
-  return entries;
+  const physicalEnds = new Map<number, number>();
+  for (const [index, entry] of ranges.entries()) {
+    const boundary =
+      index + 1 < ranges.length ? ranges[index + 1]!.localHeaderOffset : centralOffset;
+    if (entry.dataEnd > boundary) throw new Error('Overlapping ZIP entry ranges');
+    if ((entry.flags & 8) === 0) {
+      if (entry.dataEnd !== boundary) throw new Error('Gap after ZIP entry data');
+      physicalEnds.set(entry.localHeaderOffset, entry.dataEnd);
+      continue;
+    }
+    const signed =
+      entry.dataEnd + 16 === boundary &&
+      view.getUint32(entry.dataEnd, true) === DATA_DESCRIPTOR_SIGNATURE &&
+      view.getUint32(entry.dataEnd + 4, true) === entry.crc32 &&
+      view.getUint32(entry.dataEnd + 8, true) === entry.compressedSize &&
+      view.getUint32(entry.dataEnd + 12, true) === entry.uncompressedSize;
+    const unsigned =
+      entry.dataEnd + 12 === boundary &&
+      view.getUint32(entry.dataEnd, true) === entry.crc32 &&
+      view.getUint32(entry.dataEnd + 4, true) === entry.compressedSize &&
+      view.getUint32(entry.dataEnd + 8, true) === entry.uncompressedSize;
+    if (Number(signed) + Number(unsigned) !== 1)
+      throw new Error('Invalid or ambiguous ZIP data descriptor');
+    physicalEnds.set(entry.localHeaderOffset, boundary);
+  }
+  return entries.map((entry) => ({
+    ...entry,
+    physicalEnd: physicalEnds.get(entry.localHeaderOffset)!,
+  }));
 };
 
 const xmlParser = new XMLParser({
@@ -348,28 +583,37 @@ const parseParagraphs = (documentXml: string): readonly string[] | null => {
 
 const boundedUnzip = (
   sourceBytes: Uint8Array,
+  entries: readonly CentralEntry[],
 ): {
   readonly files: Readonly<Record<string, Uint8Array>>;
+  readonly checks: Readonly<Record<string, { readonly size: number; readonly crc32: number }>>;
   readonly errorCode: IntakeErrorCode | null;
 } => {
   const files: Record<string, Uint8Array> = {};
+  const checks: Record<string, { readonly size: number; readonly crc32: number }> = {};
   let totalOutputBytes = 0;
   let limitError: IntakeErrorCode | null = null;
-  const unzip = new Unzip((file) => {
+  for (const entry of entries) {
     const chunks: Uint8Array[] = [];
     let entryOutputBytes = 0;
-    file.ondata = (error, chunk, final) => {
-      if (error || limitError) return;
+    let crcState = 0xffffffff;
+    const decoder = entry.compressionMethod === 0 ? new UnzipPassThrough() : new UnzipInflate();
+    decoder.ondata = (error, chunk, final) => {
+      if (error) {
+        limitError = 'INVALID_DOCX_CONTAINER';
+        return;
+      }
+      if (limitError) return;
       entryOutputBytes += chunk.byteLength;
       totalOutputBytes += chunk.byteLength;
-      if (file.name === 'word/document.xml' && entryOutputBytes > MAX_DOCUMENT_XML_BYTES)
+      crcState = updateCrc32(crcState, chunk);
+      if (entry.name === 'word/document.xml' && entryOutputBytes > MAX_DOCUMENT_XML_BYTES)
         limitError = 'DOCUMENT_XML_TOO_LARGE';
       else if (entryOutputBytes > MAX_SINGLE_UNCOMPRESSED_ENTRY_BYTES)
         limitError = 'ZIP_ENTRY_TOO_LARGE';
       else if (totalOutputBytes > MAX_TOTAL_UNCOMPRESSED_BYTES)
         limitError = 'ZIP_TOTAL_UNCOMPRESSED_LIMIT_EXCEEDED';
       if (limitError) {
-        file.terminate();
         return;
       }
       if (chunk.byteLength > 0) chunks.push(chunk.slice());
@@ -380,17 +624,34 @@ const boundedUnzip = (
           bytes.set(part, offset);
           offset += part.byteLength;
         }
-        files[file.name] = bytes;
+        files[entry.name] = bytes;
+        checks[entry.name] = { size: entryOutputBytes, crc32: (crcState ^ 0xffffffff) >>> 0 };
       }
     };
-    file.start();
-  });
-  unzip.register(UnzipPassThrough);
-  unzip.register(UnzipInflate);
-  for (let offset = 0; offset < sourceBytes.byteLength && !limitError; offset += 256)
-    unzip.push(sourceBytes.subarray(offset, Math.min(offset + 256, sourceBytes.byteLength)), false);
-  if (!limitError) unzip.push(new Uint8Array(), true);
-  return { files, errorCode: limitError };
+    const compressed = sourceBytes.subarray(entry.dataStart, entry.dataEnd);
+    for (let offset = 0; offset < compressed.byteLength && !limitError; offset += 256) {
+      const end = Math.min(offset + 256, compressed.byteLength);
+      decoder.push(compressed.subarray(offset, end), end === compressed.byteLength);
+    }
+    if (compressed.byteLength === 0 && !limitError) decoder.push(new Uint8Array(), true);
+    if (limitError) break;
+  }
+  return { files, checks, errorCode: limitError };
+};
+
+const validateCompressedStreams = (sourceBytes: Uint8Array, entries: readonly CentralEntry[]) => {
+  for (const entry of entries) {
+    const compressed = sourceBytes.subarray(entry.dataStart, entry.dataEnd);
+    if (compressed.byteLength !== entry.compressedSize)
+      throw new Error('ZIP compressed slice length mismatch');
+    if (entry.compressionMethod === 0) {
+      if (entry.compressedSize !== entry.uncompressedSize)
+        throw new Error('Stored ZIP entry size mismatch');
+      continue;
+    }
+    if (rawDeflateTerminalBytes(compressed) !== entry.compressedSize)
+      throw new Error('DEFLATE stream has trailing compressed bytes');
+  }
 };
 
 export const extractDocxSeedRecords = (sourceBytes: Uint8Array): DocxExtractionResult => {
@@ -409,6 +670,12 @@ export const extractDocxSeedRecords = (sourceBytes: Uint8Array): DocxExtractionR
     return failure('INVALID_DOCX_CONTAINER', 'Encrypted DOCX ZIP entries are not supported');
   if (entries.some((entry) => entry.compressionMethod !== 0 && entry.compressionMethod !== 8))
     return failure('INVALID_DOCX_CONTAINER', 'DOCX ZIP uses an unsupported compression method');
+
+  try {
+    validateCompressedStreams(sourceBytes, entries);
+  } catch {
+    return failure('INVALID_DOCX_CONTAINER', 'DOCX ZIP compressed stream is invalid');
+  }
 
   const names = new Set<string>();
   for (const entry of entries) {
@@ -443,13 +710,23 @@ export const extractDocxSeedRecords = (sourceBytes: Uint8Array): DocxExtractionR
     return failure('UNSUPPORTED_DOCX_STRUCTURE', 'DOCX contains an unsupported content part');
 
   let unzipped: Readonly<Record<string, Uint8Array>>;
+  let checks: Readonly<Record<string, { readonly size: number; readonly crc32: number }>>;
   try {
-    const extraction = boundedUnzip(sourceBytes);
+    const extraction = boundedUnzip(sourceBytes, entries);
     if (extraction.errorCode)
       return failure(extraction.errorCode, 'DOCX ZIP actual decompressed output exceeds a limit');
     unzipped = extraction.files;
+    checks = extraction.checks;
   } catch {
     return failure('INVALID_DOCX_CONTAINER', 'DOCX ZIP entries could not be read completely');
+  }
+  for (const entry of entries) {
+    const check = checks[entry.name];
+    if (!check || check.size !== entry.uncompressedSize || check.crc32 !== entry.crc32)
+      return failure(
+        'INVALID_DOCX_CONTAINER',
+        'DOCX ZIP actual output does not match central directory',
+      );
   }
   const documentBytes = unzipped['word/document.xml'];
   if (!documentBytes || documentBytes.byteLength !== documentEntry.uncompressedSize)

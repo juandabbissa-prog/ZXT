@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { strToU8, zipSync } from 'fflate';
+import { deflateSync, strToU8, zipSync } from 'fflate';
 import {
   COZE_PROVENANCE_NOTICE,
   DOCX_EXTRACTION_VERSION,
@@ -129,7 +129,411 @@ const mutateZipHeaders = (
   return result;
 };
 
+const crc32 = (bytes: Uint8Array): number => {
+  let value = 0xffffffff;
+  for (const byte of bytes) {
+    value ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+  }
+  return (value ^ 0xffffffff) >>> 0;
+};
+
+const concatBytes = (...parts: readonly Uint8Array[]): Uint8Array => {
+  const result = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.byteLength;
+  }
+  return result;
+};
+
+const zipWords = (...values: readonly number[]): Uint8Array => {
+  const result = new Uint8Array(values.length * 4);
+  const view = new DataView(result.buffer);
+  values.forEach((value, index) => view.setUint32(index * 4, value >>> 0, true));
+  return result;
+};
+
+type DescriptorEntry = {
+  readonly name: string;
+  readonly data: Uint8Array;
+  readonly compressed?: Uint8Array;
+  readonly method?: 0 | 8;
+  readonly flags?: number;
+  readonly descriptor?: 'SIGNED' | 'UNSIGNED' | 'MISSING' | 'ZIP64';
+  readonly descriptorTuple?: readonly [number, number, number];
+  readonly rawDescriptor?: Uint8Array;
+  readonly centralTuple?: readonly [number, number, number];
+  readonly localTuple?: readonly [number, number, number];
+};
+
+const makeDescriptorZip = (
+  entries: readonly DescriptorEntry[],
+  options: { readonly signed?: boolean } = {},
+): Uint8Array => {
+  const signed = options.signed ?? true;
+  const locals: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let localOffset = 0;
+  for (const entry of entries) {
+    const name = strToU8(entry.name);
+    const method = entry.method ?? 8;
+    const flags = entry.flags ?? 8;
+    const compressed = entry.compressed ?? (method === 8 ? deflateSync(entry.data) : entry.data);
+    const crc = crc32(entry.data);
+    const centralTuple = entry.centralTuple ?? [crc, compressed.length, entry.data.length];
+    const localTuple = entry.localTuple ?? ((flags & 8) !== 0 ? [0, 0, 0] : centralTuple);
+    const local = new Uint8Array(30 + name.length);
+    const localView = new DataView(local.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, flags, true);
+    localView.setUint16(8, method, true);
+    localView.setUint32(14, localTuple[0], true);
+    localView.setUint32(18, localTuple[1], true);
+    localView.setUint32(22, localTuple[2], true);
+    localView.setUint16(26, name.length, true);
+    local.set(name, 30);
+    const descriptorKind = entry.descriptor ?? (signed ? 'SIGNED' : 'UNSIGNED');
+    const descriptorTuple = entry.descriptorTuple ?? centralTuple;
+    const descriptor =
+      entry.rawDescriptor ??
+      (descriptorKind === 'SIGNED'
+        ? zipWords(0x08074b50, ...descriptorTuple)
+        : descriptorKind === 'UNSIGNED'
+          ? zipWords(...descriptorTuple)
+          : descriptorKind === 'ZIP64'
+            ? concatBytes(zipWords(0x08074b50, descriptorTuple[0]), new Uint8Array(16))
+            : new Uint8Array());
+    locals.push(local, compressed, descriptor);
+
+    const central = new Uint8Array(46 + name.length);
+    const centralView = new DataView(central.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, flags, true);
+    centralView.setUint16(10, method, true);
+    centralView.setUint32(16, centralTuple[0], true);
+    centralView.setUint32(20, centralTuple[1], true);
+    centralView.setUint32(24, centralTuple[2], true);
+    centralView.setUint16(28, name.length, true);
+    centralView.setUint32(42, localOffset, true);
+    central.set(name, 46);
+    centrals.push(central);
+    localOffset += local.length + compressed.length + descriptor.length;
+  }
+  const central = concatBytes(...centrals);
+  const eocd = new Uint8Array(22);
+  const eocdView = new DataView(eocd.buffer);
+  eocdView.setUint32(0, 0x06054b50, true);
+  eocdView.setUint16(8, entries.length, true);
+  eocdView.setUint16(10, entries.length, true);
+  eocdView.setUint32(12, central.length, true);
+  eocdView.setUint32(16, localOffset, true);
+  return concatBytes(...locals, central, eocd);
+};
+
+const rawStoredDeflate = (...parts: readonly Uint8Array[]): Uint8Array =>
+  concatBytes(
+    ...parts.map((part, index) => {
+      if (part.length > 0xffff) throw new Error('Stored DEFLATE test block is too large');
+      const header = new Uint8Array(5);
+      const view = new DataView(header.buffer);
+      header[0] = index === parts.length - 1 ? 1 : 0;
+      view.setUint16(1, part.length, true);
+      view.setUint16(3, part.length ^ 0xffff, true);
+      return concatBytes(header, part);
+    }),
+  );
+
+const deflateBits = (...fields: readonly (readonly [number, number])[]): Uint8Array => {
+  const bitCount = fields.reduce((total, [, count]) => total + count, 0);
+  const result = new Uint8Array(Math.ceil(bitCount / 8));
+  let offset = 0;
+  for (const [value, count] of fields)
+    for (let bit = 0; bit < count; bit += 1) {
+      result[offset >>> 3] = result[offset >>> 3]! | (((value >>> bit) & 1) << (offset & 7));
+      offset += 1;
+    }
+  return result;
+};
+
+const descriptorEntries = (
+  body: string,
+  documentOverrides: Partial<DescriptorEntry> = {},
+): readonly DescriptorEntry[] => {
+  const xml = strToU8(documentXml(body));
+  return [
+    { name: '[Content_Types].xml', data: strToU8(CONTENT_TYPES) },
+    { name: '_rels/.rels', data: strToU8(ROOT_RELS) },
+    { name: 'word/document.xml', data: xml, ...documentOverrides },
+  ];
+};
+
+const descriptorDocx = (
+  body: string,
+  options: { readonly signed?: boolean; readonly documentCompressed?: Uint8Array } = {},
+): Uint8Array =>
+  makeDescriptorZip(descriptorEntries(body, { compressed: options.documentCompressed }), options);
+
 describe('deterministic DOCX seed source intake', () => {
+  test.each([
+    ['signed', true],
+    ['unsigned', false],
+  ] as const)('accepts a valid classic %s data descriptor', (_name, signed) => {
+    const result = convert(descriptorDocx(validBody(paragraph('大连买房')), { signed }));
+    expect(result).toMatchObject({ status: 'SUCCESS' });
+  });
+
+  test('rejects trailing bytes included in the declared DEFLATE compressed size', () => {
+    const xml = strToU8(documentXml(validBody(paragraph('大连买房'))));
+    for (const junkLength of [1, 4, 16]) {
+      const compressed = concatBytes(deflateSync(xml), new Uint8Array(junkLength).fill(0xa5));
+      expectFailure(
+        convert(
+          descriptorDocx(validBody(paragraph('大连买房')), { documentCompressed: compressed }),
+        ),
+        'INVALID_DOCX_CONTAINER',
+      );
+    }
+  });
+
+  test('validates stored descriptor output with the standard CRC32 vector', () => {
+    const bytes = makeDescriptorZip([
+      ...descriptorEntries(validBody(paragraph('大连买房'))),
+      {
+        name: 'crc-vector.txt',
+        data: strToU8('123456789'),
+        method: 0,
+        centralTuple: [0xcbf43926, 9, 9],
+        descriptorTuple: [0xcbf43926, 9, 9],
+      },
+    ]);
+    expect(convert(bytes).status).toBe('SUCCESS');
+  });
+
+  test('accepts stored, fixed, dynamic and multiple-block raw DEFLATE streams', () => {
+    const smallXml = strToU8(documentXml(validBody(paragraph('大连买房'))));
+    const fixedData = strToU8('fixed');
+    const fixed = deflateSync(fixedData, { level: 1 });
+    expect((fixed[0]! >>> 1) & 3).toBe(1);
+    const largeBody = validBody(
+      ...Array.from({ length: 200 }, (_unused, index) => paragraph(`大连房产关键词${index}`)),
+    );
+    const largeXml = strToU8(documentXml(largeBody));
+    const dynamic = deflateSync(largeXml, { level: 6 });
+    expect((dynamic[0]! >>> 1) & 3).toBe(2);
+    const midpoint = Math.floor(smallXml.length / 2);
+    const variants = [
+      rawStoredDeflate(smallXml),
+      dynamic,
+      rawStoredDeflate(smallXml.slice(0, midpoint), smallXml.slice(midpoint)),
+    ];
+    const bodies = [validBody(paragraph('大连买房')), largeBody, validBody(paragraph('大连买房'))];
+    variants.forEach((compressed, index) => {
+      const body = bodies[index]!;
+      expect(convert(makeDescriptorZip(descriptorEntries(body, { compressed }))).status).toBe(
+        'SUCCESS',
+      );
+    });
+    expect(
+      convert(
+        makeDescriptorZip([
+          ...descriptorEntries(validBody(paragraph('大连买房'))),
+          { name: 'fixed.bin', data: fixedData, compressed: fixed },
+        ]),
+      ).status,
+    ).toBe('SUCCESS');
+  });
+
+  test.each([
+    ['CRC', 0, 1],
+    ['compressed size', 1, 1],
+    ['uncompressed size', 2, 1],
+  ] as const)('rejects descriptor %s mismatch', (_name, tupleIndex, delta) => {
+    const body = validBody(paragraph('大连买房'));
+    const data = strToU8(documentXml(body));
+    const compressed = deflateSync(data);
+    const tuple: [number, number, number] = [crc32(data), compressed.length, data.length];
+    tuple[tupleIndex] = (tuple[tupleIndex] + delta) >>> 0;
+    expectFailure(
+      convert(makeDescriptorZip(descriptorEntries(body, { compressed, descriptorTuple: tuple }))),
+      'INVALID_DOCX_CONTAINER',
+    );
+  });
+
+  test('rejects central CRC and output-size claims that disagree with actual output', () => {
+    const body = validBody(paragraph('大连买房'));
+    const data = strToU8(documentXml(body));
+    const compressed = deflateSync(data);
+    const crc = crc32(data);
+    for (const tuple of [
+      [crc ^ 1, compressed.length, data.length],
+      [crc, compressed.length, data.length + 1],
+    ] as const)
+      expectFailure(
+        convert(
+          makeDescriptorZip(
+            descriptorEntries(body, { compressed, centralTuple: tuple, descriptorTuple: tuple }),
+          ),
+        ),
+        'INVALID_DOCX_CONTAINER',
+      );
+  });
+
+  test('rejects missing, truncated, oversized and ZIP64 descriptor layouts', () => {
+    const body = validBody(paragraph('大连买房'));
+    const data = strToU8(documentXml(body));
+    const compressed = deflateSync(data);
+    const tuple = [crc32(data), compressed.length, data.length] as const;
+    for (const overrides of [
+      { descriptor: 'MISSING' as const },
+      { rawDescriptor: zipWords(0x08074b50, ...tuple).slice(0, 15) },
+      { rawDescriptor: concatBytes(zipWords(0x08074b50, ...tuple), new Uint8Array(4)) },
+      { descriptor: 'ZIP64' as const },
+    ])
+      expectFailure(
+        convert(makeDescriptorZip(descriptorEntries(body, { compressed, ...overrides }))),
+        'INVALID_DOCX_CONTAINER',
+      );
+  });
+
+  test('rejects descriptor overlap boundaries and a descriptor appended with bit 3 clear', () => {
+    const body = validBody(paragraph('大连买房'));
+    const data = strToU8(documentXml(body));
+    const compressed = deflateSync(data);
+    const tuple = [crc32(data), compressed.length, data.length] as const;
+    const overlapping = makeDescriptorZip(
+      descriptorEntries(body, {
+        compressed,
+        rawDescriptor: zipWords(0x08074b50, ...tuple).slice(0, 12),
+      }),
+    );
+    expectFailure(convert(overlapping), 'INVALID_DOCX_CONTAINER');
+    const entries = [...descriptorEntries(body)];
+    const first = entries[0]!;
+    const firstCompressed = deflateSync(first.data);
+    const firstTuple = [crc32(first.data), firstCompressed.length, first.data.length] as const;
+    entries[0] = {
+      ...first,
+      compressed: firstCompressed,
+      rawDescriptor: zipWords(0x08074b50, ...firstTuple).slice(0, 15),
+    };
+    expectFailure(convert(makeDescriptorZip(entries)), 'INVALID_DOCX_CONTAINER');
+    expectFailure(
+      convert(
+        makeDescriptorZip(
+          descriptorEntries(body, {
+            compressed,
+            flags: 0,
+            localTuple: tuple,
+            descriptor: 'SIGNED',
+          }),
+        ),
+      ),
+      'INVALID_DOCX_CONTAINER',
+    );
+  });
+
+  test('does not confuse descriptor signature bytes inside compressed payload', () => {
+    const marker = new Uint8Array([0x50, 0x4b, 0x07, 0x08]);
+    const bytes = makeDescriptorZip([
+      ...descriptorEntries(validBody(paragraph('大连买房'))),
+      { name: 'marker.bin', data: marker, compressed: rawStoredDeflate(marker) },
+    ]);
+    expect(convert(bytes).status).toBe('SUCCESS');
+  });
+
+  test('rejects descriptor-signature CRC ambiguity when actual output does not corroborate it', () => {
+    const body = validBody(paragraph('大连买房'));
+    const data = strToU8(documentXml(body));
+    const compressed = deflateSync(data);
+    const tuple = [0x08074b50, compressed.length, data.length] as const;
+    expectFailure(
+      convert(
+        makeDescriptorZip(
+          descriptorEntries(body, {
+            compressed,
+            centralTuple: tuple,
+            descriptorTuple: tuple,
+            descriptor: 'UNSIGNED',
+          }),
+          { signed: false },
+        ),
+      ),
+      'INVALID_DOCX_CONTAINER',
+    );
+  });
+
+  test('rejects malformed stored, fixed and dynamic DEFLATE grammars', () => {
+    const body = validBody(paragraph('大连买房'));
+    const data = strToU8(documentXml(body));
+    const stored = rawStoredDeflate(data);
+    const badStored = stored.slice();
+    badStored[3] = badStored[3]! ^ 1;
+    for (const compressed of [badStored, new Uint8Array([0x03]), new Uint8Array([0x05, 0x00])])
+      expectFailure(
+        convert(makeDescriptorZip(descriptorEntries(body, { compressed }))),
+        'INVALID_DOCX_CONTAINER',
+      );
+  });
+
+  test('rejects truncated streams, missing EOB, invalid Huffman trees and invalid repeat semantics', () => {
+    const body = validBody(paragraph('大连买房'));
+    const data = strToU8(documentXml(body));
+    const valid = deflateSync(data);
+    const missingEob = deflateSync(strToU8('A')).slice(0, -1);
+    const oversubscribedCodeLengthTree = deflateBits(
+      [1, 1],
+      [2, 2],
+      [0, 5],
+      [0, 5],
+      [0, 4],
+      [1, 3],
+      [1, 3],
+      [1, 3],
+      [1, 3],
+    );
+    const repeatWithoutPreviousLength = deflateBits(
+      [1, 1],
+      [2, 2],
+      [0, 5],
+      [0, 5],
+      [0, 4],
+      [1, 3],
+      [0, 3],
+      [0, 3],
+      [0, 3],
+      [0, 1],
+    );
+    for (const compressed of [
+      valid.slice(0, -1),
+      missingEob,
+      oversubscribedCodeLengthTree,
+      repeatWithoutPreviousLength,
+    ])
+      expectFailure(
+        convert(makeDescriptorZip(descriptorEntries(body, { compressed }))),
+        'INVALID_DOCX_CONTAINER',
+      );
+  });
+
+  test('rejects mixed zero and non-zero local descriptor tuples', () => {
+    const body = validBody(paragraph('大连买房'));
+    const data = strToU8(documentXml(body));
+    const compressed = deflateSync(data);
+    expectFailure(
+      convert(
+        makeDescriptorZip(
+          descriptorEntries(body, { compressed, localTuple: [0, compressed.length, 0] }),
+        ),
+      ),
+      'INVALID_DOCX_CONTAINER',
+    );
+  });
+
   test('joins split runs, preserves paragraph order/empty/exact text and excludes one exact notice', () => {
     const decomposed = ' e\u0301 ';
     const bytes = makeDocx(
