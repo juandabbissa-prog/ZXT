@@ -1000,6 +1000,141 @@ describe('deterministic DOCX seed source intake', () => {
     );
   });
 
+  describe('bounded OOXML formatting metadata grammar', () => {
+    const wrap = (body: string, namespace = `xmlns:w="${W_NS}"`) =>
+      `<w:document ${namespace}><w:body>${body}</w:body></w:document>`;
+    const content = (firstParagraph: string, section = '') =>
+      `${firstParagraph}${paragraph(COZE_PROVENANCE_NOTICE)}${section}`;
+    const textRun = '<w:r><w:t xml:space="preserve">  大连买房  </w:t></w:r>';
+    const validTop = '<w:top w:val="single" w:sz="4" w:color="auto"/>';
+    const validLeft = '<w:left w:val="single" w:sz="4" w:color="auto"/>';
+    const validLayoutSection =
+      '<w:sectPr w:rsidR="00112233" w:rsidRPr="44556677" w:rsidSect="8899AABB"><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="851" w:footer="992" w:gutter="0"/><w:cols w:space="425"/><w:docGrid w:linePitch="312"/></w:sectPr>';
+    const convertXml = (xml: string) =>
+      convert(makeDocx('', { 'word/document.xml': strToU8(xml) }));
+
+    test.each([
+      ['empty leading pPr', '<w:p><w:pPr/>' + textRun + '</w:p>'],
+      [
+        'pStyle plus top border plus spacing',
+        `<w:p><w:pPr><w:pStyle w:val="Normal"/><w:pBdr>${validTop}</w:pBdr><w:spacing w:after="160"/></w:pPr>${textRun}</w:p>`,
+      ],
+      [
+        'pStyle plus shading plus left border',
+        `<w:p><w:pPr><w:pStyle w:val="Normal"/><w:shd w:fill="FFFFFF" w:val="clear"/><w:pBdr>${validLeft}</w:pBdr></w:pPr>${textRun}</w:p>`,
+      ],
+      ['paragraph without pPr', `<w:p>${textRun}</w:p>`],
+    ] as const)('accepts %s without changing raw text', (_name, firstParagraph) => {
+      const result = convertXml(wrap(content(firstParagraph)));
+      expect(result.status).toBe('SUCCESS');
+      if (result.status !== 'SUCCESS') throw new Error('Expected metadata grammar success');
+      expect(result.corpus.items[0]?.rawText).toBe('  大连买房  ');
+    });
+
+    test('accepts namespace aliases for every metadata element and attribute', () => {
+      const aliasParagraph =
+        '<x:p><x:pPr><x:pStyle x:val="Normal"/><x:pBdr><x:top x:val="single" x:sz="4" x:color="auto"/></x:pBdr><x:spacing x:after="160"/></x:pPr><x:r><x:t>大连买房</x:t></x:r></x:p>';
+      const aliasNotice = `<x:p><x:r><x:t>${COZE_PROVENANCE_NOTICE}</x:t></x:r></x:p>`;
+      const aliasSection =
+        '<x:sectPr x:rsidR="00112233" x:rsidRPr="44556677" x:rsidSect="8899AABB"><x:pgSz x:w="11906" x:h="16838"/><x:pgMar x:top="1440" x:right="1440" x:bottom="1440" x:left="1440" x:header="851" x:footer="992" x:gutter="0"/><x:cols x:space="425"/><x:docGrid x:linePitch="312"/></x:sectPr>';
+      const xml = `<x:document xmlns:x="${W_NS}"><x:body>${aliasParagraph}${aliasNotice}${aliasSection}</x:body></x:document>`;
+      expect(convertXml(xml).status).toBe('SUCCESS');
+    });
+
+    test.each([
+      ['wrong namespace lookalike', `<w:p><x:pPr xmlns:x="urn:evil"/>${textRun}</w:p>`],
+      ['multiple pPr', `<w:p><w:pPr/><w:pPr/>${textRun}</w:p>`],
+      ['non-leading pPr', `<w:p>${textRun}<w:pPr/></w:p>`],
+      ['pPr after a run', `<w:p><w:r><w:t>prefix</w:t></w:r><w:pPr/>${textRun}</w:p>`],
+      ['unknown pPr child', `<w:p><w:pPr><w:keepNext/></w:pPr>${textRun}</w:p>`],
+      ['unknown pPr attribute', `<w:p><w:pPr w:foo="bar"/>${textRun}</w:p>`],
+      ['direct text in pPr', `<w:p><w:pPr>HIDDEN</w:pPr>${textRun}</w:p>`],
+      ['w:t in pPr', `<w:p><w:pPr><w:t>HIDDEN</w:t></w:pPr>${textRun}</w:p>`],
+      ['instrText in pPr', `<w:p><w:pPr><w:instrText>HIDDEN</w:instrText></w:pPr>${textRun}</w:p>`],
+      ['delText in pPr', `<w:p><w:pPr><w:delText>HIDDEN</w:delText></w:pPr>${textRun}</w:p>`],
+      ['nested run in pPr', `<w:p><w:pPr><w:r><w:t>HIDDEN</w:t></w:r></w:pPr>${textRun}</w:p>`],
+      [
+        'pBdr without child',
+        `<w:p><w:pPr><w:pStyle w:val="Normal"/><w:pBdr/><w:spacing w:after="160"/></w:pPr>${textRun}</w:p>`,
+      ],
+      [
+        'pBdr with duplicate children',
+        `<w:p><w:pPr><w:pStyle w:val="Normal"/><w:pBdr>${validTop}${validTop}</w:pBdr><w:spacing w:after="160"/></w:pPr>${textRun}</w:p>`,
+      ],
+      [
+        'pBdr with top and left',
+        `<w:p><w:pPr><w:pStyle w:val="Normal"/><w:pBdr>${validTop}${validLeft}</w:pBdr><w:spacing w:after="160"/></w:pPr>${textRun}</w:p>`,
+      ],
+      [
+        'unknown pBdr child',
+        `<w:p><w:pPr><w:pStyle w:val="Normal"/><w:pBdr><w:bottom w:val="single" w:sz="4" w:color="auto"/></w:pBdr><w:spacing w:after="160"/></w:pPr>${textRun}</w:p>`,
+      ],
+    ] as const)('rejects invalid paragraph metadata: %s', (_name, firstParagraph) => {
+      expectFailure(convertXml(wrap(content(firstParagraph))), 'UNSUPPORTED_DOCX_STRUCTURE');
+    });
+
+    test('accepts the exact final layout sectPr and retains empty final sectPr support', () => {
+      expect(convertXml(wrap(content(paragraph('大连买房'), validLayoutSection))).status).toBe(
+        'SUCCESS',
+      );
+      expect(convertXml(wrap(content(paragraph('大连买房'), '<w:sectPr/>'))).status).toBe(
+        'SUCCESS',
+      );
+    });
+
+    test.each([
+      [
+        'wrong child order',
+        validLayoutSection.replace(
+          /<w:pgSz([^>]*)\/><w:pgMar([^>]*)\/>/u,
+          '<w:pgMar$2/><w:pgSz$1/>',
+        ),
+      ],
+      ['missing child', validLayoutSection.replace(/<w:cols[^>]*\/>/u, '')],
+      [
+        'duplicate child',
+        validLayoutSection.replace(/<w:cols([^>]*)\/>/u, '<w:cols$1/><w:cols$1/>'),
+      ],
+      [
+        'unknown child',
+        validLayoutSection.replace('</w:sectPr>', '<w:headerReference/></w:sectPr>'),
+      ],
+      [
+        'wrong namespace child',
+        validLayoutSection.replace(/<w:cols([^>]*)\/>/u, '<x:cols xmlns:x="urn:evil"$1/>'),
+      ],
+      [
+        'unknown sectPr attribute',
+        validLayoutSection.replace('<w:sectPr ', '<w:sectPr w:foo="bar" '),
+      ],
+      [
+        'direct text in section metadata',
+        validLayoutSection.replace('<w:pgSz ', '<w:pgSz>HIDDEN</w:pgSz><w:pgSz '),
+      ],
+      [
+        'content element in section metadata',
+        validLayoutSection.replace(
+          '</w:sectPr>',
+          '<w:p><w:r><w:t>HIDDEN</w:t></w:r></w:p></w:sectPr>',
+        ),
+      ],
+    ] as const)('rejects invalid section metadata: %s', (_name, section) => {
+      expectFailure(
+        convertXml(wrap(content(paragraph('大连买房'), section))),
+        'UNSUPPORTED_DOCX_STRUCTURE',
+      );
+    });
+
+    test('rejects non-final and multiple sectPr elements', () => {
+      const body = `${paragraph('大连买房')}<w:sectPr/>${paragraph(COZE_PROVENANCE_NOTICE)}`;
+      expectFailure(convertXml(wrap(body)), 'UNSUPPORTED_DOCX_STRUCTURE');
+      expectFailure(
+        convertXml(wrap(content(paragraph('大连买房'), '<w:sectPr/><w:sectPr/>'))),
+        'UNSUPPORTED_DOCX_STRUCTURE',
+      );
+    });
+  });
+
   test('freezes sectPr as one optional empty final body element', () => {
     const wrap = (body: string) =>
       `<w:document xmlns:w="${W_NS}"><w:body>${body}</w:body></w:document>`;
