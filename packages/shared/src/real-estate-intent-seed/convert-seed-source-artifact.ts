@@ -126,6 +126,17 @@ const buildCorpus = (
       });
       continue;
     }
+    if (rawText === '') {
+      records.push({
+        originalOrder,
+        rawText,
+        status: 'EMPTY',
+        included: false,
+        errorCode: null,
+        reason: 'No semantic seed content; retained for audit only',
+      });
+      continue;
+    }
     const ordinal = occurrenceOrdinals.get(rawText) ?? 0;
     occurrenceOrdinals.set(rawText, ordinal + 1);
     const identityPayload: SeedIdentityPayload = {
@@ -149,7 +160,7 @@ const buildCorpus = (
     records.push({
       originalOrder,
       rawText,
-      status: rawText === '' ? 'EMPTY' : 'VALID',
+      status: 'VALID',
       included: true,
       errorCode: null,
       reason: null,

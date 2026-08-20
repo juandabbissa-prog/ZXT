@@ -241,6 +241,12 @@ export const seedSourceIntakeSuccessSchema = z
         message: 'Raw item count must equal intake record count',
       });
     const includedRecords = intakeReport.records.filter((record) => record.included);
+    if (includedRecords.some((record) => record.status !== 'VALID'))
+      context.addIssue({
+        code: 'custom',
+        path: ['intakeReport', 'records'],
+        message: 'Only VALID records may be included in SeedCorpus',
+      });
     if (corpus.items.length !== includedRecords.length)
       context.addIssue({
         code: 'custom',
@@ -262,10 +268,10 @@ export const seedSourceIntakeSuccessSchema = z
           record.errorCode === null &&
           record.reason === null) ||
         (record.status === 'EMPTY' &&
-          record.included &&
+          !record.included &&
           record.rawText === '' &&
           record.errorCode === null &&
-          record.reason === null) ||
+          record.reason === 'No semantic seed content; retained for audit only') ||
         (record.status === 'SOURCE_PROVENANCE_NOTICE' &&
           !record.included &&
           record.rawText === COZE_PROVENANCE_NOTICE &&
