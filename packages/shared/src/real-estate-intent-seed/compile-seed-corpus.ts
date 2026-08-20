@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { INTENT_STAGES, REAL_ESTATE_INTENTS } from '../real-estate-intent/contracts';
+import { INTENT_STAGES } from '../real-estate-intent/contracts';
 import { normalizeIntentText } from '../real-estate-intent/normalize-intent-text';
 import {
   CANDIDATE_IDENTITY_VERSION,
@@ -12,6 +12,7 @@ import {
   type CompiledIntentCandidate,
   type SeedCompilationResult,
 } from './schemas';
+import { resolveSeedCandidate } from './resolve-seed-candidate';
 
 const compareText = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
@@ -57,12 +58,6 @@ export const compileSeedCorpus = (input: unknown): SeedCompilationResult => {
           left.matchedSpan.end - right.matchedSpan.end ||
           compareText(left.termId, right.termId),
       );
-    const proposedIntents = [...new Set(matchedRules.map((rule) => rule.intent))].sort(
-      (a, b) => REAL_ESTATE_INTENTS.indexOf(a) - REAL_ESTATE_INTENTS.indexOf(b),
-    );
-    const proposedDefaultStages = [...new Set(matchedRules.map((rule) => rule.defaultStage))].sort(
-      (a, b) => INTENT_STAGES.indexOf(a) - INTENT_STAGES.indexOf(b),
-    );
     const supportSignatures = new Map<string, Set<string>>();
     for (const rule of matchedRules) {
       const key = `${rule.matchedSpan.start}:${rule.matchedSpan.end}:${rule.normalizedPhrase}`;
@@ -71,19 +66,29 @@ export const compileSeedCorpus = (input: unknown): SeedCompilationResult => {
       supportSignatures.set(key, signatures);
     }
     const conflicted = [...supportSignatures.values()].some((signatures) => signatures.size > 1);
-    const weakOnly =
-      matchedRules.length > 0 &&
-      matchedRules.every((rule) => rule.evidenceStrength === 'WEAK_TERM');
-    const mappingStatus =
-      matchedRules.length === 0
-        ? 'UNMAPPED'
-        : conflicted
-          ? 'CONFLICTED'
-          : weakOnly
-            ? 'AMBIGUOUS'
-            : proposedIntents.length > 1
-              ? 'MULTI_INTENT'
-              : 'MAPPED';
+    const resolution = resolveSeedCandidate({ normalizedText, matchedRules, conflicted });
+    const proposedIntents = [...resolution.primaryIntents];
+    const derivedStageByIntent = {
+      PROPERTY_SEARCH: 'EXPLORING',
+      PRICE_CONCERN: 'EVALUATING',
+      PURCHASE_DECISION: 'EVALUATING',
+      FINANCIAL_PREPARATION: 'EVALUATING',
+      BUYING_QUALIFICATION: 'EVALUATING',
+      EDUCATION_NEED: 'EXPLORING',
+      LIFE_STAGE_CHANGE: 'EXPLORING',
+      INVESTMENT_INTENT: 'EVALUATING',
+      HIGH_INTENT_ACTION: 'ACTION_REQUEST',
+    } as const;
+    const proposedDefaultStages = [
+      ...new Set(
+        proposedIntents.flatMap((intent) => {
+          const ruleStages = matchedRules
+            .filter((rule) => rule.intent === intent && rule.evidenceStrength !== 'WEAK_TERM')
+            .map((rule) => rule.defaultStage);
+          return ruleStages.length > 0 ? ruleStages : [derivedStageByIntent[intent]];
+        }),
+      ),
+    ].sort((a, b) => INTENT_STAGES.indexOf(a) - INTENT_STAGES.indexOf(b));
     const canonicalCandidateId = `icand1_${sha256({ identityVersion: CANDIDATE_IDENTITY_VERSION, normalizationVersion: corpus.normalizationVersion, market: corpus.market, locale: corpus.locale, normalizedText })}`;
     const observations = items
       .map((item) => ({
@@ -108,10 +113,20 @@ export const compileSeedCorpus = (input: unknown): SeedCompilationResult => {
       proposedIntents,
       proposedDefaultStages,
       matchedRules,
-      mappingExplanations: matchedRules.map(
-        (rule) => `${rule.termId}@${rule.matchedSpan.start}:${rule.matchedSpan.end}`,
-      ),
-      mappingStatus,
+      mappingExplanations: [
+        ...matchedRules.map(
+          (rule) => `${rule.termId}@${rule.matchedSpan.start}:${rule.matchedSpan.end}`,
+        ),
+        ...resolution.derivedSupports.map(
+          (support) =>
+            `${support.supportId}@${support.matchedSpan.start}:${support.matchedSpan.end}`,
+        ),
+      ],
+      primaryIntents: resolution.primaryIntents,
+      traceIntents: resolution.traceIntents,
+      derivedSupports: resolution.derivedSupports,
+      intentResolutions: resolution.intentResolutions,
+      mappingStatus: resolution.mappingStatus,
       qualityFlags: normalizedText === '' ? ['LOW_INFORMATION'] : [],
       dictionaryVersionUsed: dictionary.dictionaryVersion,
       normalizationVersion: corpus.normalizationVersion,
