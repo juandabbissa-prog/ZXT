@@ -42,6 +42,13 @@ type CentralEntry = {
 
 type OrderedXmlNode = Record<string, unknown>;
 
+type SemanticElement = {
+  readonly name: string;
+  readonly children: readonly unknown[];
+  readonly namespaces: ReadonlyMap<string, string>;
+  readonly node: OrderedXmlNode;
+};
+
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_FILE_SIGNATURE = 0x02014b50;
@@ -459,6 +466,152 @@ const semanticName = (
   };
 };
 
+const semanticElements = (
+  values: readonly unknown[],
+  parentNamespaces: ReadonlyMap<string, string>,
+): readonly SemanticElement[] =>
+  values.flatMap((value) => {
+    if (value === null || typeof value !== 'object') return [];
+    const node = value as OrderedXmlNode;
+    const namespaces = namespaceEnvironment(node, parentNamespaces);
+    return elementEntries(node).map(([name, children]) => ({ name, children, namespaces, node }));
+  });
+
+const semanticAttributeNames = (
+  node: OrderedXmlNode,
+  namespaces: ReadonlyMap<string, string>,
+): readonly { readonly namespace: string | undefined; readonly localName: string }[] => {
+  const attributes = node[':@'];
+  if (!attributes || typeof attributes !== 'object') return [];
+  return Object.keys(attributes as OrderedXmlNode).flatMap((attributeName) => {
+    const qualifiedName = attributeName.replace(/^@_/u, '');
+    if (qualifiedName === 'xmlns' || qualifiedName.startsWith('xmlns:')) return [];
+    const separator = qualifiedName.indexOf(':');
+    if (separator < 0) return [{ namespace: undefined, localName: qualifiedName }];
+    return [
+      {
+        namespace: namespaces.get(qualifiedName.slice(0, separator)),
+        localName: qualifiedName.slice(separator + 1),
+      },
+    ];
+  });
+};
+
+const hasExactWordAttributes = (
+  element: SemanticElement,
+  expectedLocalNames: readonly string[],
+): boolean => {
+  const actual = semanticAttributeNames(element.node, element.namespaces);
+  return (
+    actual.length === expectedLocalNames.length &&
+    expectedLocalNames.every(
+      (localName) =>
+        actual.filter(
+          (attribute) =>
+            attribute.namespace === WORDPROCESSINGML_NAMESPACE && attribute.localName === localName,
+        ).length === 1,
+    )
+  );
+};
+
+const hasOnlyWordAttributes = (
+  element: SemanticElement,
+  allowedLocalNames: readonly string[],
+): boolean =>
+  semanticAttributeNames(element.node, element.namespaces).every(
+    (attribute) =>
+      attribute.namespace === WORDPROCESSINGML_NAMESPACE &&
+      allowedLocalNames.includes(attribute.localName),
+  );
+
+const isWordElement = (element: SemanticElement, localName: string): boolean => {
+  const semantic = semanticName(element.name, element.namespaces);
+  return semantic.namespace === WORDPROCESSINGML_NAMESPACE && semantic.localName === localName;
+};
+
+const validMetadataLeaf = (
+  element: SemanticElement,
+  localName: string,
+  attributes: readonly string[],
+): boolean =>
+  isWordElement(element, localName) &&
+  !hasNonWhitespaceDirectText(element.children) &&
+  semanticElements(element.children, element.namespaces).length === 0 &&
+  hasExactWordAttributes(element, attributes);
+
+const validParagraphBorder = (element: SemanticElement): boolean => {
+  if (
+    !isWordElement(element, 'pBdr') ||
+    hasNonWhitespaceDirectText(element.children) ||
+    !hasExactWordAttributes(element, [])
+  )
+    return false;
+  const children = semanticElements(element.children, element.namespaces);
+  return (
+    children.length === 1 &&
+    (validMetadataLeaf(children[0]!, 'top', ['val', 'sz', 'color']) ||
+      validMetadataLeaf(children[0]!, 'left', ['val', 'sz', 'color']))
+  );
+};
+
+const validParagraphProperties = (element: SemanticElement): boolean => {
+  if (
+    !isWordElement(element, 'pPr') ||
+    hasNonWhitespaceDirectText(element.children) ||
+    !hasExactWordAttributes(element, [])
+  )
+    return false;
+  const children = semanticElements(element.children, element.namespaces);
+  if (children.length === 0) return true;
+  const names = children.map((child) => semanticName(child.name, child.namespaces));
+  if (names.some((name) => name.namespace !== WORDPROCESSINGML_NAMESPACE)) return false;
+  const localNames = names.map((name) => name.localName).join(',');
+  if (localNames === 'pStyle,pBdr,spacing')
+    return (
+      validMetadataLeaf(children[0]!, 'pStyle', ['val']) &&
+      validParagraphBorder(children[1]!) &&
+      validMetadataLeaf(children[2]!, 'spacing', ['after'])
+    );
+  if (localNames === 'pStyle,shd,pBdr')
+    return (
+      validMetadataLeaf(children[0]!, 'pStyle', ['val']) &&
+      validMetadataLeaf(children[1]!, 'shd', ['fill', 'val']) &&
+      validParagraphBorder(children[2]!)
+    );
+  return false;
+};
+
+const validSectionProperties = (element: SemanticElement): boolean => {
+  if (
+    !isWordElement(element, 'sectPr') ||
+    hasNonWhitespaceDirectText(element.children) ||
+    !hasOnlyWordAttributes(element, ['rsidR', 'rsidRPr', 'rsidSect'])
+  )
+    return false;
+  const children = semanticElements(element.children, element.namespaces);
+  if (children.length === 0) return true;
+  const names = children.map((child) => semanticName(child.name, child.namespaces));
+  if (
+    names.some((name) => name.namespace !== WORDPROCESSINGML_NAMESPACE) ||
+    names.map((name) => name.localName).join(',') !== 'pgSz,pgMar,cols,docGrid'
+  )
+    return false;
+  return (
+    validMetadataLeaf(children[0]!, 'pgSz', ['w', 'h']) &&
+    validMetadataLeaf(children[1]!, 'pgMar', [
+      'top',
+      'right',
+      'bottom',
+      'left',
+      'header',
+      'footer',
+      'gutter',
+    ]) &&
+    validMetadataLeaf(children[2]!, 'cols', ['space']) &&
+    validMetadataLeaf(children[3]!, 'docGrid', ['linePitch'])
+  );
+};
+
 const containsXInclude = (
   nodes: readonly unknown[],
   parentNamespaces: ReadonlyMap<string, string> = new Map(),
@@ -521,47 +674,35 @@ const parseParagraphs = (documentXml: string): readonly string[] | null => {
   if (hasNonWhitespaceDirectText(bodyElement.children)) return null;
 
   const paragraphs: string[] = [];
-  const bodyElements = bodyElement.children.flatMap((value) => {
-    if (value === null || typeof value !== 'object') return [];
-    const node = value as OrderedXmlNode;
-    const namespaces = namespaceEnvironment(node, bodyElement.namespaces);
-    return elementEntries(node).map(([name, children]) => ({ name, children, namespaces }));
-  });
+  const bodyElements = semanticElements(bodyElement.children, bodyElement.namespaces);
   for (const [elementIndex, bodyChild] of bodyElements.entries()) {
     const element = semanticName(bodyChild.name, bodyChild.namespaces);
     if (element.namespace !== WORDPROCESSINGML_NAMESPACE) return null;
     if (element.localName === 'sectPr') {
-      if (
-        elementIndex !== bodyElements.length - 1 ||
-        hasNonWhitespaceDirectText(bodyChild.children) ||
-        bodyChild.children.some(
-          (child) =>
-            child !== null &&
-            typeof child === 'object' &&
-            elementEntries(child as OrderedXmlNode).length > 0,
-        )
-      )
+      if (elementIndex !== bodyElements.length - 1 || !validSectionProperties(bodyChild))
         return null;
       continue;
     }
     if (element.localName !== 'p') return null;
     if (hasNonWhitespaceDirectText(bodyChild.children)) return null;
     const parts: string[] = [];
-    for (const runValue of bodyChild.children) {
-      if (runValue === null || typeof runValue !== 'object') continue;
-      const runNode = runValue as OrderedXmlNode;
-      const runNamespaces = namespaceEnvironment(runNode, bodyChild.namespaces);
-      const runs = elementEntries(runNode);
-      if (runs.length === 0) continue;
-      if (runs.length !== 1) return null;
-      const [runName, runChildren] = runs[0]!;
-      const run = semanticName(runName, runNamespaces);
+    const paragraphElements = semanticElements(bodyChild.children, bodyChild.namespaces);
+    const properties = paragraphElements.filter((child) => isWordElement(child, 'pPr'));
+    if (
+      properties.length > 1 ||
+      (properties.length === 1 &&
+        (paragraphElements[0] !== properties[0] || !validParagraphProperties(properties[0]!)))
+    )
+      return null;
+    const runElements = properties.length === 1 ? paragraphElements.slice(1) : paragraphElements;
+    for (const runElement of runElements) {
+      const run = semanticName(runElement.name, runElement.namespaces);
       if (run.namespace !== WORDPROCESSINGML_NAMESPACE || run.localName !== 'r') return null;
-      if (hasNonWhitespaceDirectText(runChildren)) return null;
-      for (const textValue of runChildren) {
+      if (hasNonWhitespaceDirectText(runElement.children)) return null;
+      for (const textValue of runElement.children) {
         if (textValue === null || typeof textValue !== 'object') continue;
         const textNode = textValue as OrderedXmlNode;
-        const textNamespaces = namespaceEnvironment(textNode, runNamespaces);
+        const textNamespaces = namespaceEnvironment(textNode, runElement.namespaces);
         const texts = elementEntries(textNode);
         if (texts.length === 0) continue;
         if (texts.length !== 1) return null;
