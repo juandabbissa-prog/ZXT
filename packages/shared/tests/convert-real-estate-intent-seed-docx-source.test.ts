@@ -551,14 +551,22 @@ describe('deterministic DOCX seed source intake', () => {
     if (result.status !== 'SUCCESS') throw new Error('Expected DOCX success');
     expect(result.corpus.items.map((item) => item.rawText)).toEqual([
       '大连买房',
-      '',
       '重复',
       '重复',
       decomposed,
       '大连 Naval 广场',
     ]);
-    expect(result.corpus.items.map((item) => item.originalOrder)).toEqual([0, 1, 2, 3, 4, 5]);
-    expect(result.corpus.items[2]?.seedId).not.toBe(result.corpus.items[3]?.seedId);
+    expect(result.corpus.items.map((item) => item.originalOrder)).toEqual([0, 2, 3, 4, 5]);
+    expect(result.corpus.items[1]?.seedId).not.toBe(result.corpus.items[2]?.seedId);
+    expect(result.intakeReport.records[1]).toMatchObject({
+      originalOrder: 1,
+      rawText: '',
+      status: 'EMPTY',
+      included: false,
+      errorCode: null,
+      reason: 'No semantic seed content; retained for audit only',
+    });
+    expect(result.intakeReport.records[1]).not.toHaveProperty('seedId');
     expect(result.intakeReport.records.at(-1)).toMatchObject({
       rawText: COZE_PROVENANCE_NOTICE,
       status: 'SOURCE_PROVENANCE_NOTICE',
@@ -1266,6 +1274,112 @@ describe('deterministic DOCX seed source intake', () => {
       { normalizationVersion: '2.0.0' },
     ]) {
       const corpus = { ...result.corpus, ...corpusMutation };
+      const canonicalCorpusJson = `${JSON.stringify(corpus, null, 2)}\n`;
+      expect(
+        seedSourceIntakeResultSchema.safeParse({
+          ...result,
+          corpus,
+          canonicalCorpusJson,
+          manifest: {
+            ...result.manifest,
+            convertedArtifactSha256: checksumSourceArtifact(
+              new TextEncoder().encode(canonicalCorpusJson),
+            ),
+          },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  test('rejects coordinated attempts to include EMPTY records in a successful corpus', () => {
+    const result = convert(makeDocx(validBody(paragraph('大连买房'), paragraph(''))));
+    expect(result.status).toBe('SUCCESS');
+    if (result.status !== 'SUCCESS') throw new Error('Expected success');
+    const empty = result.intakeReport.records.find((record) => record.status === 'EMPTY');
+    if (!empty) throw new Error('Expected EMPTY audit record');
+
+    const notice = result.intakeReport.records.find(
+      (record) => record.status === 'SOURCE_PROVENANCE_NOTICE',
+    );
+    if (!notice) throw new Error('Expected provenance notice');
+    const replaceRecord = (replacement: Record<string, unknown>) =>
+      result.intakeReport.records.map((record) =>
+        record.originalOrder === replacement.originalOrder ? replacement : record,
+      );
+    for (const invalidEmpty of [
+      { ...empty, included: true },
+      { ...empty, reason: null },
+      { ...empty, reason: 'anything else' },
+      { ...empty, rawText: 'not empty' },
+      { ...empty, seedId: 'forbidden' },
+    ])
+      expect(
+        seedSourceIntakeResultSchema.safeParse({
+          ...result,
+          intakeReport: { ...result.intakeReport, records: replaceRecord(invalidEmpty) },
+        }).success,
+      ).toBe(false);
+
+    const valid = result.intakeReport.records.find((record) => record.status === 'VALID');
+    if (!valid) throw new Error('Expected VALID record');
+    for (const invalidValid of [
+      { ...valid, included: false },
+      { ...valid, reason: 'unexpected reason' },
+    ])
+      expect(
+        seedSourceIntakeResultSchema.safeParse({
+          ...result,
+          intakeReport: { ...result.intakeReport, records: replaceRecord(invalidValid) },
+        }).success,
+      ).toBe(false);
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        intakeReport: {
+          ...result.intakeReport,
+          records: replaceRecord({ ...notice, included: true }),
+        },
+      }).success,
+    ).toBe(false);
+
+    const emptyCorpus = {
+      ...result.corpus,
+      items: [
+        ...result.corpus.items,
+        {
+          ...result.corpus.items[0]!,
+          seedId: 'empty-seed',
+          rawText: '',
+          originalOrder: empty.originalOrder!,
+        },
+      ],
+    };
+    const emptyCorpusJson = `${JSON.stringify(emptyCorpus, null, 2)}\n`;
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        intakeReport: {
+          ...result.intakeReport,
+          records: replaceRecord({ ...empty, included: true }),
+        },
+        corpus: emptyCorpus,
+        canonicalCorpusJson: emptyCorpusJson,
+        manifest: {
+          ...result.manifest,
+          convertedArtifactSha256: checksumSourceArtifact(
+            new TextEncoder().encode(emptyCorpusJson),
+          ),
+        },
+      }).success,
+    ).toBe(false);
+
+    for (const forbiddenOrder of [empty.originalOrder!, notice.originalOrder!]) {
+      const corpus = {
+        ...result.corpus,
+        items: result.corpus.items.map((item, index) =>
+          index === 0 ? { ...item, originalOrder: forbiddenOrder } : item,
+        ),
+      };
       const canonicalCorpusJson = `${JSON.stringify(corpus, null, 2)}\n`;
       expect(
         seedSourceIntakeResultSchema.safeParse({

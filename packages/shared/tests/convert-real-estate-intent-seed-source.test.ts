@@ -69,13 +69,19 @@ describe('controlled seed source intake', () => {
       ' 大连买房',
       '大连买房',
       '９０平',
-      '',
       '- 学区房',
       '1. 首付',
     ]);
-    expect(result.corpus.items.map((item) => item.originalOrder)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(result.corpus.items.map((item) => item.originalOrder)).toEqual([0, 1, 2, 3, 5, 6]);
     expect(result.corpus.items[0]?.seedId).not.toBe(result.corpus.items[2]?.seedId);
-    expect(result.intakeReport.records[4]).toMatchObject({ status: 'EMPTY', included: true });
+    expect(result.intakeReport.records[4]).toMatchObject({
+      rawText: '',
+      status: 'EMPTY',
+      included: false,
+      errorCode: null,
+      reason: 'No semantic seed content; retained for audit only',
+    });
+    expect(result.intakeReport.records[4]).not.toHaveProperty('seedId');
     const spaced = convert(' 甲 ');
     expect(spaced.status).toBe('SUCCESS');
     if (spaced.status !== 'SUCCESS') throw new Error('Expected successful intake');
@@ -92,7 +98,38 @@ describe('controlled seed source intake', () => {
     expect(result.status).toBe('SUCCESS');
     if (result.status !== 'SUCCESS') throw new Error('Expected successful intake');
     expect(result.manifest.acceptedSourceEncoding).toBe('UTF-8-BOM');
-    expect(result.corpus.items.map((item) => item.rawText)).toEqual(['甲', '', '乙']);
+    expect(result.corpus.items.map((item) => item.rawText)).toEqual(['甲', '乙']);
+    expect(result.corpus.items.map((item) => item.originalOrder)).toEqual([0, 2]);
+    expect(result.intakeReport.records[1]).toMatchObject({ status: 'EMPTY', included: false });
+  });
+
+  test('keeps multiple EMPTY records audit-only without changing VALID occurrence ordinals', () => {
+    const result = convert('重复\n\n\n重复');
+    expect(result.status).toBe('SUCCESS');
+    if (result.status !== 'SUCCESS') throw new Error('Expected successful intake');
+    expect(result.intakeReport.records).toMatchObject([
+      { originalOrder: 0, rawText: '重复', status: 'VALID', included: true },
+      { originalOrder: 1, rawText: '', status: 'EMPTY', included: false },
+      { originalOrder: 2, rawText: '', status: 'EMPTY', included: false },
+      { originalOrder: 3, rawText: '重复', status: 'VALID', included: true },
+    ]);
+    expect(result.corpus.items.map((item) => item.originalOrder)).toEqual([0, 3]);
+    expect(result.corpus.items.map((item) => item.seedId)).toEqual([
+      createSeedObservationId({
+        seedIdentityVersion: '1.0.0',
+        sourceArtifactId: metadata.sourceArtifactId,
+        sourceArtifactSha256: result.manifest.sourceArtifactSha256,
+        rawText: '重复',
+        sourceOccurrenceOrdinalAmongIdenticalRawText: 0,
+      }),
+      createSeedObservationId({
+        seedIdentityVersion: '1.0.0',
+        sourceArtifactId: metadata.sourceArtifactId,
+        sourceArtifactSha256: result.manifest.sourceArtifactSha256,
+        rawText: '重复',
+        sourceOccurrenceOrdinalAmongIdenticalRawText: 1,
+      }),
+    ]);
   });
 
   test('fails closed for invalid UTF-8, unsupported format, metadata mismatch and governance blocks', () => {
