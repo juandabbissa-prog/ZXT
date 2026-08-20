@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { seedCorpusSchema } from './schemas';
+import { checksumSourceArtifact } from './checksum-source-artifact';
 import {
   ACCEPTED_SOURCE_ENCODINGS,
   ACCEPTED_SOURCE_FORMATS,
@@ -185,7 +186,7 @@ export const seedSourceIntakeSuccessSchema = z
     canonicalCorpusJson: z.string().min(1),
   })
   .strict()
-  .superRefine(({ intakeReport }, context) => {
+  .superRefine(({ manifest, intakeReport, corpus, canonicalCorpusJson }, context) => {
     if (intakeReport.status !== 'SUCCESS')
       context.addIssue({
         code: 'custom',
@@ -197,6 +198,86 @@ export const seedSourceIntakeSuccessSchema = z
         code: 'custom',
         path: ['intakeReport', 'errorCode'],
         message: 'SUCCESS result requires a null intake report errorCode',
+      });
+    const countFields = [
+      'itemCountRaw',
+      'itemCountValid',
+      'itemCountEmpty',
+      'itemCountMalformed',
+      'itemCountUnsupported',
+      'itemCountExcludedProvenanceNotice',
+    ] as const;
+    for (const field of countFields)
+      if (manifest[field] !== intakeReport[field])
+        context.addIssue({
+          code: 'custom',
+          path: ['intakeReport', field],
+          message: `Manifest and intake report ${field} must match`,
+        });
+    const classifiedCount =
+      intakeReport.itemCountValid +
+      intakeReport.itemCountEmpty +
+      intakeReport.itemCountMalformed +
+      intakeReport.itemCountUnsupported +
+      intakeReport.itemCountExcludedProvenanceNotice;
+    if (
+      intakeReport.itemCountRaw !== intakeReport.records.length ||
+      classifiedCount !== intakeReport.itemCountRaw
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['intakeReport', 'itemCountRaw'],
+        message: 'Intake counts must exactly classify all records',
+      });
+    if (corpus.items.length !== intakeReport.records.filter((record) => record.included).length)
+      context.addIssue({
+        code: 'custom',
+        path: ['corpus', 'items'],
+        message: 'Corpus items must match included intake records',
+      });
+    if (
+      manifest.sourceArtifactId !== intakeReport.sourceArtifactId ||
+      manifest.sourceArtifactSha256 !== intakeReport.sourceArtifactSha256
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['intakeReport', 'sourceArtifactSha256'],
+        message: 'Manifest and report source identity must match',
+      });
+    if (
+      manifest.acceptedSourceFormat !== intakeReport.acceptedSourceFormat ||
+      manifest.acceptedSourceEncoding !== intakeReport.acceptedSourceEncoding ||
+      manifest.declaredSourceFormat !== intakeReport.declaredSourceFormat ||
+      manifest.declaredSourceEncoding !== intakeReport.declaredSourceEncoding
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['intakeReport', 'acceptedSourceFormat'],
+        message: 'Manifest and report source format/encoding must match',
+      });
+    if (
+      manifest.convertedArtifactSha256 !==
+      checksumSourceArtifact(new TextEncoder().encode(canonicalCorpusJson))
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['manifest', 'convertedArtifactSha256'],
+        message: 'Converted artifact checksum must match canonical corpus bytes',
+      });
+    if (`${JSON.stringify(corpus, null, 2)}\n` !== canonicalCorpusJson)
+      context.addIssue({
+        code: 'custom',
+        path: ['canonicalCorpusJson'],
+        message: 'Canonical corpus JSON must serialize the corpus exactly',
+      });
+    if (
+      manifest.acceptedSourceFormat === 'DOCX' &&
+      manifest.sourceRecordCount !== intakeReport.itemCountRaw
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['manifest', 'sourceRecordCount'],
+        message: 'DOCX sourceRecordCount must equal raw paragraph count',
       });
   })
   .readonly();

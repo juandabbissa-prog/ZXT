@@ -9,7 +9,9 @@ import {
   MAX_TOTAL_UNCOMPRESSED_BYTES,
   MAX_ZIP_ENTRY_COUNT,
   checksumSourceArtifact,
+  compileSeedCorpus,
   convertSeedSourceArtifact,
+  seedSourceIntakeResultSchema,
   type SeedSourceIntakeMetadata,
 } from '../src/real-estate-intent-seed';
 
@@ -103,6 +105,26 @@ const markFirstEntryEncrypted = (bytes: Uint8Array): Uint8Array => {
       view.setUint16(offset + 6, view.getUint16(offset + 6, true) | 1, true);
     if (signature === 0x02014b50)
       view.setUint16(offset + 8, view.getUint16(offset + 8, true) | 1, true);
+  }
+  return result;
+};
+
+const mutateZipHeaders = (
+  bytes: Uint8Array,
+  name: string,
+  mutate: (view: DataView, offset: number, central: boolean) => void,
+): Uint8Array => {
+  const result = bytes.slice();
+  const view = new DataView(result.buffer, result.byteOffset, result.byteLength);
+  const needle = strToU8(name);
+  for (let offset = 0; offset <= result.length - needle.length; offset += 1) {
+    if (!needle.every((value, index) => result[offset + index] === value)) continue;
+    const localOffset = offset - 30;
+    const centralOffset = offset - 46;
+    if (localOffset >= 0 && view.getUint32(localOffset, true) === 0x04034b50)
+      mutate(view, localOffset, false);
+    if (centralOffset >= 0 && view.getUint32(centralOffset, true) === 0x02014b50)
+      mutate(view, centralOffset, true);
   }
   return result;
 };
@@ -312,6 +334,141 @@ describe('deterministic DOCX seed source intake', () => {
     expectFailure(convert(documentTooLarge), 'DOCUMENT_XML_TOO_LARGE');
   });
 
+  test('rejects actual decompressed output that exceeds a forged small declaration', () => {
+    const name = 'word/media/large.bin';
+    const bytes = makeDocx(validBody(paragraph('大连买房')), {
+      [name]: new Uint8Array(MAX_SINGLE_UNCOMPRESSED_ENTRY_BYTES + 1),
+    });
+    const forged = mutateZipHeaders(bytes, name, (view, offset, central) =>
+      view.setUint32(offset + (central ? 24 : 22), 1, true),
+    );
+    expectFailure(convert(forged), 'ZIP_ENTRY_TOO_LARGE');
+  });
+
+  test('enforces actual document and total output limits against forged declarations', () => {
+    const oversizedXml = `<?xml version="1.0"?><w:document xmlns:w="${W_NS}"><w:body>${' '.repeat(MAX_DOCUMENT_XML_BYTES + 1)}</w:body></w:document>`;
+    const documentBytes = makeDocx('', { 'word/document.xml': strToU8(oversizedXml) });
+    const forgedDocument = mutateZipHeaders(
+      documentBytes,
+      'word/document.xml',
+      (view, offset, central) => view.setUint32(offset + (central ? 24 : 22), 1, true),
+    );
+    expectFailure(convert(forgedDocument), 'DOCUMENT_XML_TOO_LARGE');
+
+    const chunkLength = Math.floor(MAX_TOTAL_UNCOMPRESSED_BYTES / 3) + 1;
+    let totalBytes = makeDocx(validBody(paragraph('大连买房')), {
+      'extra/a.bin': new Uint8Array(chunkLength),
+      'extra/b.bin': new Uint8Array(chunkLength),
+      'extra/c.bin': new Uint8Array(chunkLength),
+    });
+    for (const name of ['extra/a.bin', 'extra/b.bin', 'extra/c.bin'])
+      totalBytes = mutateZipHeaders(totalBytes, name, (view, offset, central) =>
+        view.setUint32(offset + (central ? 24 : 22), 1, true),
+      );
+    expectFailure(convert(totalBytes), 'ZIP_TOTAL_UNCOMPRESSED_LIMIT_EXCEEDED');
+  });
+
+  test('rejects descriptor mode and overlapping entry ranges', () => {
+    const base = makeDocx(validBody(paragraph('大连买房')), {
+      'extra/a.bin': new Uint8Array([1]),
+      'extra/b.bin': new Uint8Array([2]),
+    });
+    const descriptor = mutateZipHeaders(base, 'extra/a.bin', (view, offset, central) =>
+      view.setUint16(
+        offset + (central ? 8 : 6),
+        view.getUint16(offset + (central ? 8 : 6), true) | 8,
+        true,
+      ),
+    );
+    expectFailure(convert(descriptor), 'INVALID_DOCX_CONTAINER');
+
+    const overlapping = base.slice();
+    const view = new DataView(overlapping.buffer, overlapping.byteOffset, overlapping.byteLength);
+    const name = strToU8('extra/a.bin');
+    let localOffset = -1;
+    let centralOffset = -1;
+    for (let offset = 0; offset <= overlapping.length - name.length; offset += 1) {
+      if (!name.every((value, index) => overlapping[offset + index] === value)) continue;
+      if (offset >= 30 && view.getUint32(offset - 30, true) === 0x04034b50)
+        localOffset = offset - 30;
+      if (offset >= 46 && view.getUint32(offset - 46, true) === 0x02014b50)
+        centralOffset = offset - 46;
+    }
+    expect(localOffset).toBeGreaterThanOrEqual(0);
+    expect(centralOffset).toBeGreaterThanOrEqual(0);
+    const dataStart =
+      localOffset +
+      30 +
+      view.getUint16(localOffset + 26, true) +
+      view.getUint16(localOffset + 28, true);
+    let nextLocalOffset = dataStart;
+    while (
+      nextLocalOffset < overlapping.length &&
+      view.getUint32(nextLocalOffset, true) !== 0x04034b50
+    )
+      nextLocalOffset += 1;
+    const overlappingSize = nextLocalOffset - dataStart + 1;
+    view.setUint32(localOffset + 18, overlappingSize, true);
+    view.setUint32(centralOffset + 20, overlappingSize, true);
+    expectFailure(convert(overlapping), 'INVALID_DOCX_CONTAINER');
+  });
+
+  test.each([
+    [
+      'filename',
+      (view: DataView, offset: number, central: boolean) => {
+        if (!central) view.setUint8(offset + 30, 'x'.charCodeAt(0));
+      },
+    ],
+    [
+      'method',
+      (view: DataView, offset: number, central: boolean) => {
+        if (!central) view.setUint16(offset + 8, 0, true);
+      },
+    ],
+    [
+      'flags',
+      (view: DataView, offset: number, central: boolean) => {
+        if (!central) view.setUint16(offset + 6, view.getUint16(offset + 6, true) | 2, true);
+      },
+    ],
+    [
+      'compressed size',
+      (view: DataView, offset: number, central: boolean) => {
+        if (!central) view.setUint32(offset + 18, view.getUint32(offset + 18, true) + 1, true);
+      },
+    ],
+    [
+      'uncompressed size',
+      (view: DataView, offset: number, central: boolean) => {
+        if (!central) view.setUint32(offset + 22, view.getUint32(offset + 22, true) + 1, true);
+      },
+    ],
+    [
+      'CRC32',
+      (view: DataView, offset: number, central: boolean) => {
+        if (!central) view.setUint32(offset + 14, view.getUint32(offset + 14, true) ^ 1, true);
+      },
+    ],
+  ] as const)('rejects central/local %s mismatch', (_name, mutate) => {
+    expectFailure(
+      convert(
+        mutateZipHeaders(makeDocx(validBody(paragraph('大连买房'))), 'word/document.xml', mutate),
+      ),
+      'INVALID_DOCX_CONTAINER',
+    );
+  });
+
+  test.each(['C:/evil.txt', 'C:\\evil.txt', '../evil.txt', '%2e%2e/evil.txt', '//server/share'])(
+    'rejects unsafe ZIP path %s',
+    (name) => {
+      expectFailure(
+        convert(makeDocx(validBody(paragraph('大连买房')), { [name]: new Uint8Array() })),
+        'INVALID_DOCX_CONTAINER',
+      );
+    },
+  );
+
   test.each([
     ['DOCTYPE', '<!DOCTYPE w:document>', 'UNSAFE_XML_STRUCTURE'],
     [
@@ -387,5 +544,110 @@ describe('deterministic DOCX seed source intake', () => {
       ),
       'UNSUPPORTED_DOCX_STRUCTURE',
     );
+  });
+
+  test('rejects entity-encoded external relationships and XInclude namespace', () => {
+    expectFailure(
+      convert(
+        makeDocx(validBody(paragraph('大连买房')), {
+          'word/_rels/document.xml.rels': strToU8(
+            '<Relationships><Relationship TargetMode="Ex&#x74;ernal" Target="https://example.invalid"/></Relationships>',
+          ),
+        }),
+      ),
+      'UNSUPPORTED_DOCX_STRUCTURE',
+    );
+    const xml = `<?xml version="1.0"?><w:document xmlns:w="${W_NS}"><w:body><xi:include xmlns:xi="http://www.w3.org/2001/XIncl&#x75;de"/>${validBody(paragraph('大连买房'))}</w:body></w:document>`;
+    expectFailure(
+      convert(makeDocx('', { 'word/document.xml': strToU8(xml) })),
+      'UNSAFE_XML_STRUCTURE',
+    );
+  });
+
+  test('uses namespace semantics for allowed paragraphs and unsupported tables', () => {
+    const allowed = `<?xml version="1.0"?><x:document xmlns:x="${W_NS}"><x:body><x:p><x:r><x:t>大连买房</x:t></x:r></x:p><x:p><x:r><x:t>${COZE_PROVENANCE_NOTICE}</x:t></x:r></x:p><x:sectPr/></x:body></x:document>`;
+    expect(convert(makeDocx('', { 'word/document.xml': strToU8(allowed) })).status).toBe('SUCCESS');
+    const table = allowed.replace('<x:p><x:r><x:t>大连买房</x:t></x:r></x:p>', '<x:tbl/>');
+    expectFailure(
+      convert(makeDocx('', { 'word/document.xml': strToU8(table) })),
+      'UNSUPPORTED_DOCX_STRUCTURE',
+    );
+  });
+
+  test('rejects contradictory success provenance and count fields', () => {
+    const result = convert(makeDocx(validBody(paragraph('大连买房'))));
+    expect(result.status).toBe('SUCCESS');
+    if (result.status !== 'SUCCESS') throw new Error('Expected success');
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        intakeReport: {
+          ...result.intakeReport,
+          acceptedSourceFormat: 'TXT',
+          acceptedSourceEncoding: 'UTF-8',
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        manifest: { ...result.manifest, convertedArtifactSha256: 'f'.repeat(64) },
+      }).success,
+    ).toBe(false);
+    expect(
+      seedSourceIntakeResultSchema.safeParse({
+        ...result,
+        intakeReport: {
+          ...result.intakeReport,
+          itemCountRaw: result.intakeReport.itemCountRaw + 1,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  test('keeps linguistic candidate identity stable across source-byte identity changes', () => {
+    const first = convert(makeDocx(validBody(paragraph('大连买房'))));
+    const second = convert(
+      makeDocx(validBody(paragraph('大连买房')), {
+        'docProps/core.xml': strToU8('<metadata>different zip bytes</metadata>'),
+      }),
+    );
+    expect(first.status).toBe('SUCCESS');
+    expect(second.status).toBe('SUCCESS');
+    if (first.status !== 'SUCCESS' || second.status !== 'SUCCESS')
+      throw new Error('Expected success');
+    if (
+      first.manifest.acceptedSourceFormat !== 'DOCX' ||
+      second.manifest.acceptedSourceFormat !== 'DOCX'
+    )
+      throw new Error('Expected DOCX manifests');
+    expect(first.manifest.sourceArtifactSha256).not.toBe(second.manifest.sourceArtifactSha256);
+    expect(first.manifest.extractedTextArtifactSha256).toBe(
+      second.manifest.extractedTextArtifactSha256,
+    );
+    expect(first.corpus.items[0]?.seedId).not.toBe(second.corpus.items[0]?.seedId);
+    expect(first.manifest.convertedArtifactSha256).not.toBe(
+      second.manifest.convertedArtifactSha256,
+    );
+    const dictionary = {
+      dictionaryVersion: '1.0.0',
+      locale: 'zh-CN',
+      market: 'dalian-real-estate',
+      normalizationVersion: '1.0.0',
+      matchingRuleVersion: '1.0.0',
+      conflictPolicyVersion: '1.0.0',
+      entries: [],
+    };
+    const firstCandidate = compileSeedCorpus({
+      compilerVersion: '1.0.0',
+      corpus: first.corpus,
+      dictionary,
+    }).candidates[0];
+    const secondCandidate = compileSeedCorpus({
+      compilerVersion: '1.0.0',
+      corpus: second.corpus,
+      dictionary,
+    }).candidates[0];
+    expect(firstCandidate?.canonicalCandidateId).toBe(secondCandidate?.canonicalCandidateId);
   });
 });
