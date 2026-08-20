@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { compileSeedCorpus } from '../src/real-estate-intent-seed';
 import corpus from './fixtures/real-estate-intent-seed/synthetic-corpus.json';
+import realCorpus from './fixtures/real-estate-intent-seed/controlled/dalian-real-estate-coze-seed/1.0.0/seed-corpus.json';
 
 const makeEntry = (
   termId: string,
@@ -41,7 +42,7 @@ const dictionary = {
 };
 const compile = (items = corpus.items, dictionaryEntries = entries, sourceArtifactId?: string) =>
   compileSeedCorpus({
-    compilerVersion: '1.0.0',
+    compilerVersion: '1.1.0',
     corpus: {
       ...corpus,
       items: items.map((item) =>
@@ -62,7 +63,7 @@ describe('deterministic seed corpus compiler', () => {
     ]) {
       expect(() =>
         compileSeedCorpus({
-          compilerVersion: '1.0.0',
+          compilerVersion: '1.1.0',
           corpus,
           dictionary: { ...dictionary, ...mismatch },
         }),
@@ -109,27 +110,37 @@ describe('deterministic seed corpus compiler', () => {
     });
   });
 
-  test('produces mapped, unmapped, ambiguous, multi-intent and conflicted proposals', () => {
+  test('produces role-aware mapped, unmapped, ambiguous and conflicted proposals', () => {
     const result = compile();
     expect(result.candidates.find((x) => x.normalizedText === '大连买房')).toMatchObject({
       mappingStatus: 'MAPPED',
+      primaryIntents: ['PROPERTY_SEARCH'],
+      traceIntents: [],
       proposedIntents: ['PROPERTY_SEARCH'],
     });
     expect(result.candidates.find((x) => x.normalizedText === '大连购房')).toMatchObject({
       mappingStatus: 'UNMAPPED',
+      primaryIntents: [],
+      traceIntents: [],
       proposedIntents: [],
     });
     expect(result.candidates.find((x) => x.normalizedText === '房价')).toMatchObject({
       mappingStatus: 'AMBIGUOUS',
-      proposedIntents: ['PRICE_CONCERN'],
+      primaryIntents: [],
+      traceIntents: ['PRICE_CONCERN'],
+      proposedIntents: [],
     });
     expect(result.candidates.find((x) => x.normalizedText === '首付多少钱')).toMatchObject({
-      mappingStatus: 'MULTI_INTENT',
-      proposedIntents: ['PRICE_CONCERN', 'FINANCIAL_PREPARATION'],
+      mappingStatus: 'MAPPED',
+      primaryIntents: ['FINANCIAL_PREPARATION'],
+      traceIntents: [],
+      proposedIntents: ['FINANCIAL_PREPARATION'],
     });
     expect(result.candidates.find((x) => x.normalizedText === '值得吗')).toMatchObject({
       mappingStatus: 'CONFLICTED',
-      proposedIntents: ['PURCHASE_DECISION', 'INVESTMENT_INTENT'],
+      primaryIntents: [],
+      traceIntents: [],
+      proposedIntents: [],
     });
   });
 
@@ -177,7 +188,7 @@ describe('deterministic seed corpus compiler', () => {
         expect.objectContaining({ termId: 'how-much', matchedSpan: { start: 2, end: 5 } }),
       ]),
     );
-    expect(candidate?.proposedDefaultStages).toEqual(['EVALUATING', 'PREPARING']);
+    expect(candidate?.proposedDefaultStages).toEqual(['PREPARING']);
     expect(candidate).not.toHaveProperty('candidateModifiers');
   });
 
@@ -193,6 +204,17 @@ describe('deterministic seed corpus compiler', () => {
     expect(compile().candidates.map((x) => x.canonicalCandidateId)).toEqual(
       compile().candidates.map((x) => x.canonicalCandidateId),
     );
+  });
+
+  test('keeps the committed SeedCorpus 1.0.0 artifact strictly compatible', () => {
+    expect(realCorpus.schemaVersion).toBe('1.0.0');
+    expect(() =>
+      compileSeedCorpus({
+        compilerVersion: '1.1.0',
+        corpus: realCorpus,
+        dictionary,
+      }),
+    ).not.toThrow();
   });
 
   test('retains empty normalized input as LOW_INFORMATION audit group', () => {
