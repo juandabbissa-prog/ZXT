@@ -227,6 +227,7 @@ describe('controlled seed source intake', () => {
     const intake = convert('大连买房\n房价');
     expect(intake.status).toBe('SUCCESS');
     if (intake.status !== 'SUCCESS') throw new Error('Expected successful intake');
+    expect(intake.corpus.schemaVersion).toBe('1.0.0');
     const dictionary = {
       dictionaryVersion: '1.0.0',
       locale: 'zh-CN',
@@ -252,16 +253,18 @@ describe('controlled seed source intake', () => {
       ],
     };
     const first = compileSeedCorpus({
-      compilerVersion: '1.0.0',
+      compilerVersion: '1.1.0',
       corpus: intake.corpus,
       dictionary,
     });
     const replay = compileSeedCorpus({
-      compilerVersion: '1.0.0',
+      compilerVersion: '1.1.0',
       corpus: intake.corpus,
       dictionary,
     });
     expect(first).toEqual(replay);
+    expect(first.schemaVersion).toBe('1.1.0');
+    expect(first.compilerVersion).toBe('1.1.0');
     expect(first.candidates.every((candidate) => candidate.reviewStatus === 'PENDING_REVIEW')).toBe(
       true,
     );
@@ -273,7 +276,7 @@ describe('controlled seed source intake', () => {
     ]) {
       expect(() =>
         compileSeedCorpus({
-          compilerVersion: '1.0.0',
+          compilerVersion: '1.1.0',
           corpus: intake.corpus,
           dictionary: { ...dictionary, ...mismatch },
         }),

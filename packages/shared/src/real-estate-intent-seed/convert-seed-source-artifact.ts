@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { SEED_COMPILER_SCHEMA_VERSION } from './contracts';
+import { SEED_CORPUS_SCHEMA_VERSION } from './contracts';
 import { checksumSourceArtifact } from './checksum-source-artifact';
 import { extractDocxSeedRecords } from './extract-docx-seed-records';
 import {
@@ -174,7 +174,7 @@ const corpusFromItems = (
   items: ReturnType<typeof buildCorpus>['items'],
 ) =>
   seedCorpusSchema.parse({
-    schemaVersion: SEED_COMPILER_SCHEMA_VERSION,
+    schemaVersion: SEED_CORPUS_SCHEMA_VERSION,
     corpusId: metadata.corpusId,
     corpusVersion: metadata.corpusVersion,
     source: 'SEED_GENERATED',

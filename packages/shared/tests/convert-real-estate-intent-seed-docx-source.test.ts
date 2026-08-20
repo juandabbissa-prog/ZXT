@@ -1507,12 +1507,12 @@ describe('deterministic DOCX seed source intake', () => {
       entries: [],
     };
     const firstCandidate = compileSeedCorpus({
-      compilerVersion: '1.0.0',
+      compilerVersion: '1.1.0',
       corpus: first.corpus,
       dictionary,
     }).candidates[0];
     const secondCandidate = compileSeedCorpus({
-      compilerVersion: '1.0.0',
+      compilerVersion: '1.1.0',
       corpus: second.corpus,
       dictionary,
     }).candidates[0];
