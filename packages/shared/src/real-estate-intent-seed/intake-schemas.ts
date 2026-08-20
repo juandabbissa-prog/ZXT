@@ -4,6 +4,7 @@ import {
   ACCEPTED_SOURCE_ENCODINGS,
   ACCEPTED_SOURCE_FORMATS,
   CONTENT_ORIGINS,
+  DOCX_EXTRACTION_VERSION,
   INTAKE_ERROR_CODES,
   INTAKE_RECORD_STATUSES,
   INTAKE_REPORT_SCHEMA_VERSION,
@@ -22,7 +23,8 @@ export const seedSourceIntakeMetadataSchema = z
     sourceArtifactId: identifierSchema,
     sourceArtifactFilename: z.string().min(1).max(255),
     declaredSourceFormat: z.string().trim().min(1).max(40),
-    declaredSourceEncoding: z.string().trim().min(1).max(40),
+    declaredSourceEncoding: z.string().trim().min(1).max(40).nullable(),
+    expectedSourceArtifactSha256: sha256Schema.optional(),
     generationMethod: identifierSchema,
     contentOrigin: z.enum(CONTENT_ORIGINS),
     sourceReference: z.string().min(1).nullable(),
@@ -38,6 +40,27 @@ export const seedSourceIntakeMetadataSchema = z
     normalizationVersion: versionSchema,
   })
   .strict()
+  .superRefine((metadata, context) => {
+    if (metadata.declaredSourceFormat === 'DOCX') {
+      if (metadata.declaredSourceEncoding !== null)
+        context.addIssue({
+          code: 'custom',
+          path: ['declaredSourceEncoding'],
+          message: 'DOCX requires a null declaredSourceEncoding',
+        });
+      if (!metadata.expectedSourceArtifactSha256)
+        context.addIssue({
+          code: 'custom',
+          path: ['expectedSourceArtifactSha256'],
+          message: 'DOCX requires an expected source artifact checksum',
+        });
+    } else if (metadata.declaredSourceEncoding === null)
+      context.addIssue({
+        code: 'custom',
+        path: ['declaredSourceEncoding'],
+        message: 'Non-DOCX source formats require a declared encoding',
+      });
+  })
   .readonly();
 
 export const seedSourceIntakeRequestSchema = z
@@ -77,6 +100,7 @@ const intakeCountsShape = {
   itemCountEmpty: z.number().int().nonnegative(),
   itemCountMalformed: z.number().int().nonnegative(),
   itemCountUnsupported: z.number().int().nonnegative(),
+  itemCountExcludedProvenanceNotice: z.number().int().nonnegative().default(0),
 } as const;
 
 export const intakeReportSchema = z
@@ -85,7 +109,7 @@ export const intakeReportSchema = z
     sourceArtifactId: identifierSchema,
     sourceArtifactSha256: sha256Schema,
     declaredSourceFormat: z.string().min(1).max(40),
-    declaredSourceEncoding: z.string().min(1).max(40),
+    declaredSourceEncoding: z.string().min(1).max(40).nullable(),
     acceptedSourceFormat: z.enum(ACCEPTED_SOURCE_FORMATS).nullable(),
     acceptedSourceEncoding: z.enum(ACCEPTED_SOURCE_ENCODINGS).nullable(),
     status: z.enum(['SUCCESS', 'FAILURE']),
@@ -96,36 +120,60 @@ export const intakeReportSchema = z
   .strict()
   .readonly();
 
-export const provenanceManifestSchema = z
+const provenanceManifestBaseShape = {
+  manifestSchemaVersion: z.literal(PROVENANCE_MANIFEST_SCHEMA_VERSION),
+  sourceArtifactId: identifierSchema,
+  sourceArtifactFilename: z.string().min(1).max(255),
+  sourceArtifactSha256: sha256Schema,
+  sourceArtifactByteLength: z.number().int().nonnegative(),
+  source: z.literal('SEED_GENERATED'),
+  generationMethod: identifierSchema,
+  contentOrigin: z.enum(CONTENT_ORIGINS),
+  sourceReference: z.string().min(1).nullable(),
+  userProvided: z.literal(true),
+  receivedAt: receivedAtSchema,
+  personalDataDeclaration: z.literal('NO_PERSONAL_OR_PRIVATE_DATA'),
+  repositoryStoragePermission: z.literal(true),
+  market: z.literal('CN-LN-DALIAN'),
+  compilerMarket: z.literal('dalian-real-estate'),
+  locale: z.literal('zh-CN'),
+  corpusId: identifierSchema,
+  corpusVersion: versionSchema,
+  normalizationVersion: versionSchema,
+  ...intakeCountsShape,
+  conversionToolVersion: versionSchema,
+  convertedArtifactSha256: sha256Schema,
+} as const;
+
+const txtProvenanceManifestSchema = z
   .object({
-    manifestSchemaVersion: z.literal(PROVENANCE_MANIFEST_SCHEMA_VERSION),
-    sourceArtifactId: identifierSchema,
-    sourceArtifactFilename: z.string().min(1).max(255),
-    sourceArtifactSha256: sha256Schema,
-    sourceArtifactByteLength: z.number().int().nonnegative(),
-    declaredSourceFormat: z.string().min(1).max(40),
-    declaredSourceEncoding: z.string().min(1).max(40),
-    acceptedSourceFormat: z.enum(ACCEPTED_SOURCE_FORMATS),
+    ...provenanceManifestBaseShape,
+    declaredSourceFormat: z.literal('TXT'),
+    declaredSourceEncoding: z.enum(ACCEPTED_SOURCE_ENCODINGS),
+    acceptedSourceFormat: z.literal('TXT'),
     acceptedSourceEncoding: z.enum(ACCEPTED_SOURCE_ENCODINGS),
-    source: z.literal('SEED_GENERATED'),
-    generationMethod: identifierSchema,
-    contentOrigin: z.enum(CONTENT_ORIGINS),
-    sourceReference: z.string().min(1).nullable(),
-    userProvided: z.literal(true),
-    receivedAt: receivedAtSchema,
-    personalDataDeclaration: z.literal('NO_PERSONAL_OR_PRIVATE_DATA'),
-    repositoryStoragePermission: z.literal(true),
-    market: z.literal('CN-LN-DALIAN'),
-    compilerMarket: z.literal('dalian-real-estate'),
-    locale: z.literal('zh-CN'),
-    corpusId: identifierSchema,
-    corpusVersion: versionSchema,
-    normalizationVersion: versionSchema,
-    ...intakeCountsShape,
-    conversionToolVersion: versionSchema,
-    convertedArtifactSha256: sha256Schema,
   })
-  .strict()
+  .strict();
+
+const docxProvenanceManifestSchema = z
+  .object({
+    ...provenanceManifestBaseShape,
+    expectedSourceArtifactSha256: sha256Schema,
+    declaredSourceFormat: z.literal('DOCX'),
+    declaredSourceEncoding: z.null(),
+    acceptedSourceFormat: z.literal('DOCX'),
+    acceptedSourceEncoding: z.null(),
+    docxExtractionVersion: z.literal(DOCX_EXTRACTION_VERSION),
+    extractedTextArtifactSha256: sha256Schema,
+    sourceRecordCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const provenanceManifestSchema = z
+  .discriminatedUnion('acceptedSourceFormat', [
+    txtProvenanceManifestSchema,
+    docxProvenanceManifestSchema,
+  ])
   .readonly();
 
 export const seedSourceIntakeSuccessSchema = z
