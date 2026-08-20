@@ -69,10 +69,11 @@ describe('deterministic seed candidate resolver', () => {
       primary: 'PRICE_CONCERN',
     },
     {
-      text: '买房公积金怎么提',
+      text: '买房公积金贷款条件',
       rules: [
         match('buy', '买房', 'PROPERTY_SEARCH', 'WEAK_TERM'),
         match('fund', '公积金', 'FINANCIAL_PREPARATION', 'WEAK_TERM', 2, 'EVALUATING'),
+        match('loan', '贷款', 'FINANCIAL_PREPARATION', 'WEAK_TERM', 5, 'EVALUATING'),
       ],
       primary: 'FINANCIAL_PREPARATION',
     },
@@ -236,6 +237,169 @@ describe('deterministic seed candidate resolver', () => {
       mappingStatus: 'AMBIGUOUS',
       primaryIntents: [],
       traceIntents: ['PROPERTY_SEARCH', 'EDUCATION_NEED'],
+    });
+  });
+
+  describe('P0.1 semantic object and predicate ownership', () => {
+    const buy = match('buy', '买房', 'PROPERTY_SEARCH', 'WEAK_TERM');
+    const price = (start: number) =>
+      match('price', '多少钱', 'PRICE_CONCERN', 'QUALIFIED_PHRASE', start, 'EVALUATING');
+
+    test('keeps purchase-object price as PRICE_CONCERN', () => {
+      expect(resolve('这套房多少钱', [price(3)])).toMatchObject({
+        mappingStatus: 'MAPPED',
+        primaryIntents: ['PRICE_CONCERN'],
+      });
+    });
+
+    test.each([
+      ['买房租房多少钱', [buy, price(4)]],
+      ['买房停车费多少钱', [buy, price(5)]],
+      ['买房装修多少钱', [buy, price(4)]],
+      ['买房物业费多少钱', [buy, price(5)]],
+      [
+        '买房户口价格',
+        [buy, match('price-word', '价格', 'PRICE_CONCERN', 'QUALIFIED_PHRASE', 4, 'EVALUATING')],
+      ],
+    ])('does not assign purchase PRICE_CONCERN to an incompatible object: %s', (text, rules) => {
+      expect(resolve(text, rules)).toMatchObject({
+        mappingStatus: 'AMBIGUOUS',
+        primaryIntents: [],
+        traceIntents: ['PROPERTY_SEARCH', 'PRICE_CONCERN'],
+      });
+    });
+
+    test('keeps a property-target recommendation', () => {
+      expect(resolve('公寓推荐', [])).toMatchObject({
+        mappingStatus: 'MAPPED',
+        primaryIntents: ['PROPERTY_SEARCH'],
+      });
+    });
+
+    test.each(['买房装修公司推荐', '买房物业有哪些', '买房优惠推荐'])(
+      'does not bind a search operator through a nearer non-property object: %s',
+      (text) => {
+        expect(resolve(text, [buy])).toMatchObject({
+          mappingStatus: 'AMBIGUOUS',
+          primaryIntents: [],
+          traceIntents: ['PROPERTY_SEARCH'],
+        });
+      },
+    );
+
+    test('keeps the nearest compatible property target for search', () => {
+      expect(resolve('买房装修之后公寓推荐', [buy])).toMatchObject({
+        mappingStatus: 'MAPPED',
+        primaryIntents: ['PROPERTY_SEARCH'],
+      });
+    });
+
+    test('lets a nearer incompatible price object block a distant property anchor', () => {
+      expect(resolve('买房装修预算多少钱', [buy, price(6)])).toMatchObject({
+        mappingStatus: 'AMBIGUOUS',
+        primaryIntents: [],
+        traceIntents: ['PROPERTY_SEARCH', 'PRICE_CONCERN'],
+      });
+    });
+
+    test('keeps property value-worth-buy as PURCHASE_DECISION', () => {
+      expect(resolve('海景房值不值得买', [])).toMatchObject({
+        mappingStatus: 'MAPPED',
+        primaryIntents: ['PURCHASE_DECISION'],
+      });
+    });
+
+    test('lets a purchase decision own an education-context evaluation', () => {
+      expect(
+        resolve('为了学区买老房子值不值', [
+          buy,
+          match('school', '学区', 'EDUCATION_NEED', 'WEAK_TERM', 2),
+        ]),
+      ).toMatchObject({
+        mappingStatus: 'MAPPED',
+        primaryIntents: ['PURCHASE_DECISION'],
+        traceIntents: ['PROPERTY_SEARCH', 'EDUCATION_NEED'],
+      });
+    });
+
+    test.each(['房子好不好出手', '房子容易卖吗'])(
+      'lets the more specific resale-liquidity predicate own the result: %s',
+      (text) => {
+        expect(resolve(text, [])).toMatchObject({
+          mappingStatus: 'MAPPED',
+          primaryIntents: ['INVESTMENT_INTENT'],
+        });
+      },
+    );
+
+    test('lets the longer investment predicate dominate generic value-worth', () => {
+      expect(
+        resolve('公寓值不值得投资', [
+          match('investment', '投资', 'INVESTMENT_INTENT', 'QUALIFIED_PHRASE', 7, 'EVALUATING'),
+        ]),
+      ).toMatchObject({
+        mappingStatus: 'MAPPED',
+        primaryIntents: ['INVESTMENT_INTENT'],
+      });
+    });
+
+    test('preserves independent investment and qualification predicates', () => {
+      expect(resolve('买房投资同时公寓能落户吗', [buy])).toMatchObject({
+        mappingStatus: 'MULTI_INTENT',
+        primaryIntents: ['BUYING_QUALIFICATION', 'INVESTMENT_INTENT'],
+        traceIntents: ['PROPERTY_SEARCH'],
+      });
+    });
+
+    test('does not split one rental-price predicate into investment and purchase price', () => {
+      expect(
+        resolve('写字楼出租多少钱', [
+          match('rent', '出租', 'INVESTMENT_INTENT', 'QUALIFIED_PHRASE', 3, 'EVALUATING'),
+          price(5),
+        ]),
+      ).toMatchObject({
+        mappingStatus: 'AMBIGUOUS',
+        primaryIntents: [],
+        traceIntents: ['PRICE_CONCERN', 'INVESTMENT_INTENT'],
+      });
+    });
+
+    test('keeps purchase-loan preparation in FINANCIAL_PREPARATION', () => {
+      expect(
+        resolve('买房公积金贷款条件', [
+          buy,
+          match('fund', '公积金', 'FINANCIAL_PREPARATION', 'WEAK_TERM', 2, 'EVALUATING'),
+          match('loan', '贷款', 'FINANCIAL_PREPARATION', 'WEAK_TERM', 5, 'EVALUATING'),
+        ]),
+      ).toMatchObject({
+        mappingStatus: 'MAPPED',
+        primaryIntents: ['FINANCIAL_PREPARATION'],
+        traceIntents: ['PROPERTY_SEARCH'],
+      });
+    });
+
+    test.each(['买房公积金租房提取', '买房公积金装修提取', '买房公积金一年能取几次'])(
+      'keeps generic or post-purchase provident-fund administration out of finance primary: %s',
+      (text) => {
+        expect(
+          resolve(text, [
+            buy,
+            match('fund', '公积金', 'FINANCIAL_PREPARATION', 'WEAK_TERM', 2, 'EVALUATING'),
+          ]),
+        ).toMatchObject({
+          mappingStatus: 'AMBIGUOUS',
+          primaryIntents: [],
+          traceIntents: ['PROPERTY_SEARCH', 'FINANCIAL_PREPARATION'],
+        });
+      },
+    );
+
+    test('does not create a primary from an operator without a compatible target', () => {
+      expect(resolve('这个多少钱', [price(2)])).toMatchObject({
+        mappingStatus: 'AMBIGUOUS',
+        primaryIntents: [],
+        traceIntents: ['PRICE_CONCERN'],
+      });
     });
   });
 });

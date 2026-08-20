@@ -133,7 +133,7 @@ describe('deterministic seed corpus compiler', () => {
     expect(result.candidates.find((x) => x.normalizedText === '首付多少钱')).toMatchObject({
       mappingStatus: 'MAPPED',
       primaryIntents: ['FINANCIAL_PREPARATION'],
-      traceIntents: [],
+      traceIntents: ['PRICE_CONCERN'],
       proposedIntents: ['FINANCIAL_PREPARATION'],
     });
     expect(result.candidates.find((x) => x.normalizedText === '值得吗')).toMatchObject({

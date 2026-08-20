@@ -32,8 +32,10 @@ const propertyTargets = [
   '两居室',
   '三居室',
   '写字楼',
+  '老破小',
   '老房子',
   '海景房',
+  '别墅',
   '二手房',
   '新房',
   '现房',
@@ -56,23 +58,73 @@ const priceOperators = ['多少钱', '价格', '房价'] as const;
 const decisionOperators = ['值不值得买', '能买吗', '值不值', '好不好', '怎么样', '适合吗'] as const;
 const financeTargets = ['公积金', '首付', '房贷', '贷款'] as const;
 const financePredicates = [
-  '怎么提',
-  '提取',
+  '贷款条件',
+  '贷款利率',
+  '能贷多少',
   '利率',
   '比例',
   '年限',
   '还款',
-  '余额',
   '能付',
-  '能取',
   '能不能贷款',
   '多少',
 ] as const;
 const educationPredicates = ['为了学区', '上学', '入学', '对口', '学校', '能直接上'] as const;
 const qualificationPredicates = ['能不能落户', '能否落户', '可以落户', '落户吗'] as const;
-const investmentPredicates = ['升值', '投资', '出租', '回报', '涨幅', '跌幅', '抄底'] as const;
+const investmentPredicates = [
+  '好不好出手',
+  '容易卖吗',
+  '容易卖',
+  '升值',
+  '投资',
+  '出租',
+  '回报',
+  '收益',
+  '涨幅',
+  '跌幅',
+  '抄底',
+] as const;
 const independentConnectors = ['同时', '并且', '另外', '还要', '还想', '以及'] as const;
-const excludedPriceTargets = ['停车费', '物业费'] as const;
+const nonPurchasePriceObjects = [
+  '装修预算',
+  '装修价格',
+  '装修费',
+  '停车费',
+  '物业费',
+  '服务费',
+  '豪装',
+  '精装',
+  '简装',
+  '装修',
+  '租房',
+  '租金',
+  '车位',
+  '户口',
+  '物业',
+] as const;
+const nonPropertySearchObjects = [
+  '装修公司',
+  '租房平台',
+  '租房app',
+  '老业主',
+  '物业',
+  '优惠',
+  '服务',
+] as const;
+const providentFundAdministration = [
+  '租房提取',
+  '装修提取',
+  '退休提取',
+  '离职提取',
+  '封存提取',
+  '余额怎么查',
+  '提取条件',
+  '每月提取',
+  '一年能取',
+  '多久能提取',
+  '余额能全部取',
+  '能取出来装修',
+] as const;
 
 const compareText = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
@@ -140,6 +192,33 @@ const closestPropertyTarget = (
     )[0]?.target;
 };
 
+const closestOccurrence = (
+  text: string,
+  values: readonly string[],
+  operator: Occurrence | undefined,
+): { occurrence: Occurrence; distance: number } | undefined => {
+  if (!operator) return undefined;
+  return findOccurrences(text, values)
+    .map((occurrence) => ({ occurrence, distance: spanDistance(occurrence, operator) }))
+    .sort(
+      (left, right) =>
+        left.distance - right.distance ||
+        left.occurrence.start - right.occurrence.start ||
+        right.occurrence.value.length - left.occurrence.value.length,
+    )[0];
+};
+
+const incompatibleObjectOwnsOperator = (
+  text: string,
+  operator: Occurrence | undefined,
+  compatibleTarget: Occurrence | undefined,
+  incompatibleObjects: readonly string[],
+): boolean => {
+  const incompatible = closestOccurrence(text, incompatibleObjects, operator);
+  if (!incompatible) return false;
+  return !compatibleTarget || incompatible.distance <= spanDistance(compatibleTarget, operator!);
+};
+
 const makeDerivedSupport = (
   normalizedText: string,
   compositionType: CompositionType,
@@ -173,10 +252,12 @@ const deriveSupports = (normalizedText: string): DerivedIntentSupport[] => {
   const supports: DerivedIntentSupport[] = [];
   const financeTarget = firstOccurrence(normalizedText, financeTargets);
   const financePredicate = firstOccurrence(normalizedText, financePredicates);
-  const qualificationPredicate = firstOccurrence(normalizedText, qualificationPredicates);
+  const investmentPredicate = firstOccurrence(normalizedText, investmentPredicates);
+  const qualificationPredicate =
+    firstOccurrence(normalizedText, qualificationPredicates) ??
+    (investmentPredicate ? firstOccurrence(normalizedText, ['落户']) : undefined);
   const educationTarget = firstOccurrence(normalizedText, ['学区']);
   const educationPredicate = firstOccurrence(normalizedText, educationPredicates);
-  const investmentPredicate = firstOccurrence(normalizedText, investmentPredicates);
   const priceOperator = firstOccurrence(normalizedText, priceOperators);
   const searchOperator = firstOccurrence(normalizedText, searchOperators);
   const decisionOperator = firstOccurrence(normalizedText, decisionOperators);
@@ -190,8 +271,28 @@ const deriveSupports = (normalizedText: string): DerivedIntentSupport[] => {
     decisionOperator ?? canBuyOperator,
     2,
   );
+  const financeIsAdministrative = providentFundAdministration.some((phrase) =>
+    normalizedText.includes(phrase),
+  );
+  const rentalPricePredicate =
+    (normalizedText.includes('租房') ||
+      normalizedText.includes('租金') ||
+      normalizedText.includes('出租')) &&
+    priceOperator !== undefined;
+  const incompatiblePriceObject = incompatibleObjectOwnsOperator(
+    normalizedText,
+    priceOperator,
+    priceTarget,
+    nonPurchasePriceObjects,
+  );
+  const incompatibleSearchObject = incompatibleObjectOwnsOperator(
+    normalizedText,
+    searchOperator,
+    searchTarget,
+    nonPropertySearchObjects,
+  );
 
-  if (financeTarget && financePredicate) {
+  if (financeTarget && financePredicate && !financeIsAdministrative) {
     supports.push(
       makeDerivedSupport(
         normalizedText,
@@ -224,7 +325,11 @@ const deriveSupports = (normalizedText: string): DerivedIntentSupport[] => {
       ),
     );
   }
-  if (investmentTarget && investmentPredicate) {
+  if (
+    investmentTarget &&
+    investmentPredicate &&
+    !(investmentPredicate.value === '出租' && rentalPricePredicate)
+  ) {
     supports.push(
       makeDerivedSupport(
         normalizedText,
@@ -239,7 +344,8 @@ const deriveSupports = (normalizedText: string): DerivedIntentSupport[] => {
     priceTarget &&
     priceOperator &&
     !financeTarget &&
-    !excludedPriceTargets.some((target) => normalizedText.includes(target))
+    !rentalPricePredicate &&
+    !incompatiblePriceObject
   ) {
     supports.push(
       makeDerivedSupport(
@@ -251,7 +357,7 @@ const deriveSupports = (normalizedText: string): DerivedIntentSupport[] => {
       ),
     );
   }
-  if (searchTarget && searchOperator) {
+  if (searchTarget && searchOperator && !incompatibleSearchObject) {
     supports.push(
       makeDerivedSupport(
         normalizedText,
@@ -331,11 +437,36 @@ export const resolveSeedCandidate = ({
   const suppressed = new Set<RealEstateIntent>();
   for (const [intent, rules] of rulesByIntent) {
     const nonWeak = rules.filter((rule) => rule.evidenceStrength !== 'WEAK_TERM');
-    const eligible = nonWeak.some(
-      (rule) =>
+    const eligible = nonWeak.some((rule) => {
+      if (
+        intent === 'PRICE_CONCERN' &&
+        priceOperators.includes(rule.normalizedPhrase as (typeof priceOperators)[number])
+      ) {
+        return (
+          rule.normalizedPhrase === '房价' ||
+          derivedSupports.some((support) => support.intent === 'PRICE_CONCERN')
+        );
+      }
+      if (intent === 'INVESTMENT_INTENT' && rule.normalizedPhrase === '出租') {
+        return !(
+          (normalizedText.includes('租房') ||
+            normalizedText.includes('租金') ||
+            normalizedText.includes('出租')) &&
+          firstOccurrence(normalizedText, priceOperators)
+        );
+      }
+      if (
+        intent === 'PROPERTY_SEARCH' &&
+        (normalizedText.includes('租房') || normalizedText.includes('租金')) &&
+        firstOccurrence(normalizedText, priceOperators)
+      ) {
+        return false;
+      }
+      return (
         rule.evidenceStrength !== 'EXPLICIT_ACTION' ||
-        firstPropertyTarget(normalizedText) !== undefined,
-    );
+        firstPropertyTarget(normalizedText) !== undefined
+      );
+    });
     if (eligible) primary.add(intent);
     else trace.add(intent);
   }
@@ -369,6 +500,15 @@ export const resolveSeedCandidate = ({
     primary.delete('PURCHASE_DECISION');
     trace.delete('PURCHASE_DECISION');
     suppressed.add('PURCHASE_DECISION');
+  }
+  if (
+    !hasIndependentConnector &&
+    primary.has('EDUCATION_NEED') &&
+    primary.has('PURCHASE_DECISION') &&
+    normalizedText.includes('为了学区')
+  ) {
+    primary.delete('EDUCATION_NEED');
+    trace.add('EDUCATION_NEED');
   }
   const nonPropertyPrimary = [...primary].filter((intent) => intent !== 'PROPERTY_SEARCH');
   if (primary.has('PROPERTY_SEARCH') && nonPropertyPrimary.length > 0) {
